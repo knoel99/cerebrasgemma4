@@ -36,6 +36,8 @@ const progressPct = $("#progress-pct");
 const progressEta = $("#progress-eta");
 const statusMsg = $("#status-msg");
 const perfPanel = $("#perf-panel");
+const historyBlock = $("#history-block");
+const HISTORY_PANEL_KEY = "sightline-history-open";
 const headerLive = $("#header-live");
 const outputEmpty = $("#output-empty");
 const docPreview = $("#doc-preview");
@@ -1163,7 +1165,7 @@ function setReportView(view) {
   const isPreview = view === "preview";
   const isRaw = view === "raw";
 
-  outputEmpty.style.display = isPreview && !lastMarkdown ? "block" : "none";
+  outputEmpty.style.display = isPreview && !lastMarkdown ? "flex" : "none";
   docPreview.classList.toggle("visible", isPreview && !!lastMarkdown);
   docRaw.classList.toggle("visible", isRaw && !!lastMarkdown);
 
@@ -1383,7 +1385,7 @@ function resetOutput() {
   stopPolling();
   lastRenderedMetricsKey = "";
   progressWrap.classList.remove("done");
-  outputEmpty.style.display = "block";
+  outputEmpty.style.display = "flex";
   docPreview.classList.remove("visible");
   docRaw.classList.remove("visible");
   if (perfPanel) {
@@ -1663,7 +1665,16 @@ async function loadDefaults() {
   }
 }
 
+function initHistoryPanel() {
+  if (!historyBlock) return;
+  historyBlock.open = localStorage.getItem(HISTORY_PANEL_KEY) === "1";
+  historyBlock.addEventListener("toggle", () => {
+    localStorage.setItem(HISTORY_PANEL_KEY, historyBlock.open ? "1" : "0");
+  });
+}
+
 convertBtn.addEventListener("click", startConvert);
+initHistoryPanel();
 loadDefaults();
 loadHistory();
 resumeActiveJob();
