@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vid2Doc — Cerebras × Gemma 4</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+  <script>
+    (function () {
+      var stored = localStorage.getItem("vid2doc-theme");
+      var theme = stored || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="wafer-bg" aria-hidden="true"></div>
+
+  <div class="app">
+    <header class="site-header">
+      <a class="logo" href="/" aria-label="Vid2Doc home">
+        <span class="logo-mark" aria-hidden="true"></span>
+        <span class="logo-text">Vid2Doc</span>
+      </a>
+      <nav class="header-meta" aria-label="Product metadata">
+        <button type="button" class="chip-tag theme-toggle" id="theme-toggle" aria-label="Toggle theme">☀</button>
+        <span class="chip-tag">gemma-4-31b</span>
+        <span class="chip-tag chip-tag--accent">Cerebras Inference</span>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <p class="hero-eyebrow">Multimodal · Hackathon</p>
+      <h1 class="hero-title">The fastest inference is now your video pipeline.</h1>
+      <p class="hero-sub">
+        Turn any video into a structured document — key frames selected by Gemma 4,
+        blazing-fast inference on Cerebras.
+      </p>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <strong id="hero-tps">—</strong>
+          <span>tokens/s (avg.)</span>
+        </div>
+        <div class="hero-stat hero-stat--accent">
+          <strong id="hero-llm">—</strong>
+          <span>Cerebras inference</span>
+        </div>
+        <div class="hero-stat">
+          <strong id="hero-calls">—</strong>
+          <span>API calls</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="layout">
+      <section class="panel" aria-labelledby="panel-source-title">
+        <div class="panel-head">
+          <span id="panel-source-title" class="panel-label">01 — Source</span>
+        </div>
+        <div class="panel-body">
+          <div class="tabs" role="tablist">
+            <button type="button" class="tab active" data-pane="pane-youtube" role="tab">YouTube</button>
+            <button type="button" class="tab" data-pane="pane-upload" role="tab">File</button>
+          </div>
+
+          <div id="pane-youtube" class="source-pane active" role="tabpanel">
+            <div class="field">
+              <label for="youtube-url">YouTube URL</label>
+              <input type="url" id="youtube-url" placeholder="https://www.youtube.com/watch?v=…">
+            </div>
+          </div>
+
+          <div id="pane-upload" class="source-pane" role="tabpanel">
+            <label class="dropzone" id="dropzone">
+              <input type="file" id="file-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
+              <span class="dropzone-icon" aria-hidden="true">▶</span>
+              <strong>Drop a video</strong>
+              <span>MP4, WebM, MOV</span>
+            </label>
+            <p class="file-name" id="file-name"></p>
+          </div>
+
+          <p class="video-info" id="video-info" hidden></p>
+
+          <div class="options-block">
+            <p class="options-title">Settings</p>
+            <p class="estimate-box" id="estimate-box">
+              Full video processed · API calls paced at 100 req/min and 100K tok/min
+            </p>
+            <div class="field">
+              <label for="language">Transcript language</label>
+              <select id="language">
+                <option value="auto" selected>Auto</option>
+                <option value="en">English</option>
+                <option value="fr">French</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-primary" id="convert-btn">Generate document</button>
+
+          <div class="progress-wrap" id="progress-wrap">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-meta">
+              <span id="status-msg">Waiting…</span>
+              <span id="progress-pct">0%</span>
+            </div>
+          </div>
+
+          <div class="metrics" id="metrics">
+            <div class="metric">
+              <span>Total time</span>
+              <strong id="m-elapsed">—</strong>
+            </div>
+            <div class="metric">
+              <span>Cerebras LLM</span>
+              <strong id="m-llm">—</strong>
+            </div>
+            <div class="metric">
+              <span>Tokens/s</span>
+              <strong id="m-tps">—</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="panel-doc-title">
+        <div class="panel-head">
+          <span id="panel-doc-title" class="panel-label">02 — Document</span>
+        </div>
+        <div class="panel-body">
+          <div class="output-toolbar">
+            <button type="button" class="btn btn-secondary active" id="btn-preview">Preview</button>
+            <button type="button" class="btn btn-secondary" id="btn-raw">Markdown</button>
+            <button type="button" class="btn btn-secondary" id="btn-download-md" disabled>Download .md</button>
+            <button type="button" class="btn btn-secondary" id="btn-download-html" disabled>Download .html</button>
+            <button type="button" class="btn btn-secondary" id="btn-download-pdf" disabled>Download .pdf</button>
+          </div>
+
+          <div class="history-block" id="history-block">
+            <div class="history-head">
+              <span class="history-title">Report history</span>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-history">Refresh</button>
+            </div>
+            <ul class="history-list" id="history-list" aria-label="Report history"></ul>
+          </div>
+
+          <div class="output-empty" id="output-empty">
+            <div class="output-empty-icon" aria-hidden="true">◇</div>
+            <p>Your document will appear here after conversion.</p>
+            <p class="output-empty-hint">Key frames and transcript are merged by Gemma 4.</p>
+          </div>
+          <div class="doc-preview" id="doc-preview"></div>
+          <pre class="doc-raw" id="doc-raw"></pre>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel perf-panel" id="perf-panel">
+      <div class="panel-head perf-head">
+        <span class="panel-label">03 — Performance</span>
+        <button type="button" class="btn btn-secondary" id="btn-export-metrics" disabled>Export JSON</button>
+      </div>
+      <div class="panel-body">
+        <div class="perf-summary" id="perf-summary">
+          <div class="perf-stat">
+            <span>Ingest &amp; download</span>
+            <strong id="ps-ingest">—</strong>
+          </div>
+          <div class="perf-stat">
+            <span>Local prep</span>
+            <strong id="ps-local">—</strong>
+          </div>
+          <div class="perf-stat perf-stat--highlight">
+            <span>Cerebras inference</span>
+            <strong id="ps-cerebras">—</strong>
+          </div>
+          <div class="perf-stat">
+            <span>Avg. TTFT</span>
+            <strong id="ps-ttft">—</strong>
+          </div>
+          <div class="perf-stat">
+            <span>Tokens generated</span>
+            <strong id="ps-tokens">—</strong>
+          </div>
+          <div class="perf-stat">
+            <span>API calls</span>
+            <strong id="ps-calls">—</strong>
+          </div>
+        </div>
+
+        <p class="perf-hint">
+          Live metrics — saved to <code>metrics.json</code> per job. Export JSON to compare Cerebras vs GPU.
+        </p>
+
+        <ol class="step-timeline" id="step-timeline"></ol>
+
+        <details class="api-details" id="api-details">
+          <summary>Per-call API breakdown</summary>
+          <div class="api-table-wrap">
+            <table class="api-table" id="api-table">
+              <thead>
+                <tr>
+                  <th>Step</th>
+                  <th>Wall</th>
+                  <th>TTFT</th>
+                  <th>Tok/s</th>
+                  <th>Prompt</th>
+                  <th>Output</th>
+                </tr>
+              </thead>
+              <tbody id="api-table-body"></tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <span>Built for the Gemma 4 Hackathon</span>
+      <a href="https://www.cerebras.ai/" target="_blank" rel="noopener noreferrer">Cerebras</a>
+      <span aria-hidden="true">·</span>
+      <a href="https://huggingface.co/google/gemma-4-31B-it" target="_blank" rel="noopener noreferrer">Gemma 4 31B</a>
+    </footer>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
