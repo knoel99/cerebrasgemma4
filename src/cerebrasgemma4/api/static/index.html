@@ -59,13 +59,35 @@
         </div>
         <div class="panel-body panel-body--source">
           <div class="source-bar-grid">
-            <div class="source-bar-row source-bar-row--head">
+            <div class="source-bar-stack">
               <div class="seg-tabs tabs" role="tablist">
                 <button type="button" class="seg-tab tab active" data-pane="pane-youtube" role="tab">YouTube</button>
                 <button type="button" class="seg-tab tab" data-pane="pane-upload" role="tab">File</button>
               </div>
+
+              <div class="source-bar-pane">
+                <div id="pane-youtube" class="source-pane active" role="tabpanel">
+                  <div class="field field--url">
+                    <label for="youtube-url">YouTube URL</label>
+                    <input type="url" id="youtube-url" placeholder="https://www.youtube.com/watch?v=…">
+                  </div>
+                </div>
+
+                <div id="pane-upload" class="source-pane" role="tabpanel">
+                  <label class="dropzone" id="dropzone">
+                    <input type="file" id="file-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
+                    <span class="dropzone-icon" aria-hidden="true">▶</span>
+                    <strong>Drop a video</strong>
+                    <span>MP4, WebM, MOV</span>
+                  </label>
+                  <p class="file-name" id="file-name"></p>
+                </div>
+              </div>
+
+              <p class="video-info" id="video-info" hidden></p>
+
               <details class="settings-details">
-                <summary>Report settings</summary>
+                <summary>Generation prompts and settings</summary>
                 <div class="settings-details-body">
                   <p class="estimate-box" id="estimate-box">
                     Full video processed · API calls paced at 100 req/min and 100K tok/min
@@ -88,30 +110,8 @@
                   </div>
                 </div>
               </details>
-            </div>
 
-            <div class="source-bar-row source-bar-row--input">
-              <div class="source-bar-pane">
-                <div id="pane-youtube" class="source-pane active" role="tabpanel">
-                  <div class="field field--url">
-                    <label for="youtube-url">YouTube URL</label>
-                    <input type="url" id="youtube-url" placeholder="https://www.youtube.com/watch?v=…">
-                  </div>
-                </div>
-
-                <div id="pane-upload" class="source-pane" role="tabpanel">
-                  <label class="dropzone" id="dropzone">
-                    <input type="file" id="file-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
-                    <span class="dropzone-icon" aria-hidden="true">▶</span>
-                    <strong>Drop a video</strong>
-                    <span>MP4, WebM, MOV</span>
-                  </label>
-                  <p class="file-name" id="file-name"></p>
-                </div>
-
-                <p class="video-info" id="video-info" hidden></p>
-              </div>
-              <button type="button" class="btn btn-primary btn-generate" id="convert-btn">Generate document</button>
+              <button type="button" class="btn btn-primary btn-generate" id="convert-btn">Generate YouTube report</button>
             </div>
 
             <div class="progress-wrap" id="progress-wrap">
@@ -189,7 +189,7 @@
               <div class="output-empty" id="output-empty">
                 <div class="output-empty-icon" aria-hidden="true">◇</div>
                 <p>No report yet.</p>
-                <p class="output-empty-hint">Add a video and select <strong>Generate document</strong>.</p>
+                <p class="output-empty-hint">Add a video and select <strong>Generate YouTube report</strong>.</p>
               </div>
               <div class="doc-preview" id="doc-preview"></div>
               <pre class="doc-raw" id="doc-raw"></pre>
