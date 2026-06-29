@@ -24,6 +24,8 @@ def _sample_input(**kwargs) -> ComposeInput:
 def test_build_compose_prompt_includes_default_instructions():
     prompt = build_compose_prompt(_sample_input())
     assert COMPOSE_DEFAULT_INSTRUCTIONS in prompt
+    assert "photo editor" in prompt
+    assert "<editorial_rules>" in prompt
     assert "demo.mp4" in prompt
     assert "Hello world transcript." in prompt
 

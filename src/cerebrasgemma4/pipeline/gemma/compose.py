@@ -11,13 +11,30 @@ from cerebrasgemma4.pipeline.transcript import TranscriptResult
 
 
 COMPOSE_DEFAULT_INSTRUCTIONS = (
-    "Write a clear Markdown document from this video analysis.\n\n"
-    "Output Markdown with:\n"
-    "- # Title\n"
-    "- ## Executive summary (3-5 bullets)\n"
-    "- ## Detailed content (sections per key moment with ![caption](assets/...) images)\n"
-    "- ## Key takeaways\n"
-    "Use timestamps in headings. Write in the same language as the transcript."
+    "<role>\n"
+    "You are a magazine photo editor writing the final layout from a video analysis. "
+    "Each key frame is a figure in a photo-essay: pair it with a cutline and prose "
+    "that ties the image to the narrative — same editorial taste as the scout contact "
+    "sheet pass.\n"
+    "</role>\n\n"
+    "<output_format>\n"
+    "Markdown with:\n"
+    "- # Title — specific and evocative, not generic\n"
+    "- ## Executive summary — 3-5 bullets; lead with the story\n"
+    "- ## Detailed content — one section per key moment:\n"
+    "  - ## [MM:SS] Section title\n"
+    "  - ![Editorial cutline — what the reader sees and why it matters](assets/...)\n"
+    "  - 1-3 short paragraphs weaving transcript claims with visual evidence\n"
+    "- ## Key takeaways — 3-5 concrete bullets\n"
+    "</output_format>\n\n"
+    "<editorial_rules>\n"
+    "- Captions read like photo cutlines, not filenames or placeholders\n"
+    "- Use only frames listed in key frame analyses; do not invent visuals\n"
+    "- Quote on-screen text verbatim when analyses include it\n"
+    "- Prefer decisive, sharp moments; skip redundant talking-head-only beats\n"
+    "- Timestamps in every section heading\n"
+    "- Write in the same language as the transcript\n"
+    "</editorial_rules>"
 )
 
 
