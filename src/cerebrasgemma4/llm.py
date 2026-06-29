@@ -10,7 +10,7 @@ from typing import Any, Iterator
 from dotenv import load_dotenv
 from cerebras.cloud.sdk import Cerebras
 
-from cerebrasgemma4.images import build_image_parts
+from cerebrasgemma4.images import build_image_parts, build_image_parts_bytes
 
 load_dotenv()
 
@@ -105,5 +105,11 @@ def build_multimodal_message(
 ) -> dict:
     paths = [Path(p) for p in image_paths]
     parts: list[dict] = build_image_parts(paths, detail=detail)
+    parts.append({"type": "text", "text": text})
+    return {"role": "user", "content": parts}
+
+
+def build_multimodal_message_bytes(text: str, image_bytes: list[bytes]) -> dict:
+    parts: list[dict] = build_image_parts_bytes(image_bytes)
     parts.append({"type": "text", "text": text})
     return {"role": "user", "content": parts}

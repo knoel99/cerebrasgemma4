@@ -6,6 +6,7 @@ import json
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -117,11 +118,23 @@ def summarize_cerebras(calls: list[dict]) -> dict[str, Any]:
         for c in cerebras_calls
         if c.get("output_tokens_per_sec") is not None
     ]
+    queue_sec = sum(c.get("queue_time_sec") or 0 for c in cerebras_calls)
+    overhead_sec = sum(
+        max(
+            0.0,
+            (c.get("wall_sec") or 0)
+            - (c.get("total_time_sec") or 0)
+            - (c.get("queue_time_sec") or 0),
+        )
+        for c in cerebras_calls
+    )
 
     return {
         "calls": len(cerebras_calls),
         "wall_sec": round(wall, 3),
         "api_reported_sec": round(api_time, 3) if api_time else None,
+        "queue_sec": round(queue_sec, 3),
+        "client_overhead_sec": round(overhead_sec, 3),
         "prompt_tokens": int(prompt),
         "completion_tokens": int(completion),
         "image_tokens": int(image) if image else None,
@@ -152,6 +165,25 @@ def _rollup_by_stage(calls: list[dict]) -> dict[str, dict]:
             ),
         }
     return out
+
+
+def apply_wall_elapsed(metrics: dict[str, Any], created_at: str | None) -> dict[str, Any]:
+    """Align elapsed_sec with wall clock since job creation (includes queue waits)."""
+    if not created_at:
+        return metrics
+    try:
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return metrics
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    wall = (datetime.now(timezone.utc) - created).total_seconds()
+    metrics["wall_elapsed_sec"] = round(max(0.0, wall), 3)
+    metrics["elapsed_sec"] = round(
+        max(metrics.get("elapsed_sec") or 0, metrics["wall_elapsed_sec"]),
+        3,
+    )
+    return metrics
 
 
 def save_metrics_file(path: Path, metrics: dict[str, Any]) -> Path:

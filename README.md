@@ -1,6 +1,6 @@
-# Cerebras × Gemma 4 Hackathon
+# Sightline
 
-Projet hackathon — Gemma 4 31B sur [Cerebras Inference](https://inference-docs.cerebras.ai/models/gemma-4-31b).
+**Your sightline into any recording** — hackathon project powered by Gemma 4 31B on [Cerebras Inference](https://inference-docs.cerebras.ai/models/gemma-4-31b).
 
 ## License
 

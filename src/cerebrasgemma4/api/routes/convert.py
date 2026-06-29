@@ -6,10 +6,19 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 
-from cerebrasgemma4.api.schemas import ConvertOptionsSchema, ConvertResponse, ProbeResponse
+from cerebrasgemma4.api.schemas import (
+    ConvertOptionsSchema,
+    ConvertResponse,
+    DefaultsResponse,
+    ProbeResponse,
+)
+from cerebrasgemma4.pipeline.chapters import fetch_youtube_chapters
+from cerebrasgemma4.pipeline.gemma.compose import COMPOSE_DEFAULT_INSTRUCTIONS
+from cerebrasgemma4.pipeline.demo import is_demo_mode
 from cerebrasgemma4.pipeline.ingest import (
     download_url_to_file,
     download_youtube,
+    download_youtube_processing,
     fetch_youtube_metadata,
     probe_video,
     probe_youtube,
@@ -19,7 +28,7 @@ from cerebrasgemma4.pipeline.ingest import (
 from cerebrasgemma4.pipeline.options import HACKATHON_RPM, HACKATHON_TPM, suggest_convert_options
 from cerebrasgemma4.pipeline.jobs import JobStatus, JobStore
 from cerebrasgemma4.pipeline.orchestrator import ConvertOptions, run_pipeline
-from cerebrasgemma4.pipeline.perf import PerfTracker, save_metrics_file
+from cerebrasgemma4.pipeline.perf import PerfTracker, apply_wall_elapsed, save_metrics_file
 
 router = APIRouter(prefix="/api", tags=["convert"])
 
@@ -54,6 +63,8 @@ def _run_job(
             max_duration_sec=options.max_duration_sec,
             language=options.language,
             youtube_url=youtube_url,
+            custom_prompt=options.custom_prompt,
+            chapters=options.chapters,
         )
         run_pipeline(store, job_id, video_path, source_name, opts)
     except Exception:
@@ -66,6 +77,11 @@ def _run_job(
             error=traceback.format_exc(),
             message="Pipeline failed",
         )
+
+
+@router.get("/defaults", response_model=DefaultsResponse)
+def get_defaults():
+    return DefaultsResponse(compose_prompt=COMPOSE_DEFAULT_INSTRUCTIONS)
 
 
 @router.post("/probe", response_model=ProbeResponse)
@@ -95,11 +111,17 @@ async def probe_video_source(
             data = await file.read()
             await asyncio.to_thread(save_upload, video_path, data)
             meta = await asyncio.to_thread(probe_video, video_path)
+        chapter_count = 0
+        if youtube_url:
+            chapters = await asyncio.to_thread(fetch_youtube_chapters, youtube_url)
+            chapter_count = len(chapters)
         s = suggest_convert_options(
             meta.duration_sec,
             width=meta.width,
             height=meta.height,
             fps=meta.fps,
+            chapter_count=chapter_count,
+            youtube=bool(youtube_url),
         )
         return ProbeResponse(
             duration_sec=s.duration_sec,
@@ -114,6 +136,7 @@ async def probe_video_source(
             within_hackathon_rpm=s.within_hackathon_rpm,
             hackathon_capped=s.hackathon_capped,
             estimated_pipeline_minutes=s.estimated_pipeline_minutes,
+            estimated_total_minutes=s.estimated_total_minutes,
             hackathon_rpm=s.hackathon_rpm,
             hackathon_tpm=s.hackathon_tpm,
             note=_PROBE_NOTE,
@@ -130,11 +153,12 @@ async def convert_video(
     file: UploadFile | None = File(default=None),
     youtube_url: str | None = Form(default=None),
     language: str = Form(default="auto"),
+    custom_prompt: str | None = Form(default=None),
 ):
     if not file and not youtube_url:
         raise HTTPException(400, "Provide a video file or youtube_url")
 
-    opts = ConvertOptionsSchema(language=language)
+    opts = ConvertOptionsSchema(language=language, custom_prompt=custom_prompt)
     store = _get_store()
     record = store.create()
     job_id = record.job_id
@@ -165,14 +189,28 @@ async def convert_video(
                     step["detail"] = {"size_kb": round(thumb_path.stat().st_size / 1024, 1)}
 
             video_path = job_dir / "source.mp4"
-            with perf.step("youtube_download", "YouTube video download", kind="local") as step:
+            download_label = (
+                "YouTube video download (720p)"
+                if is_demo_mode()
+                else "YouTube video download"
+            )
+            with perf.step("youtube_download", download_label, kind="local") as step:
                 try:
-                    await asyncio.to_thread(download_youtube, youtube_url, video_path)
+                    if is_demo_mode():
+                        await asyncio.to_thread(
+                            download_youtube_processing, youtube_url, video_path
+                        )
+                    else:
+                        await asyncio.to_thread(download_youtube, youtube_url, video_path)
                 except RuntimeError as exc:
                     raise HTTPException(502, str(exc)) from exc
-                step["detail"] = {"size_mb": _mb(video_path)}
+                step["detail"] = {
+                    "size_mb": _mb(video_path),
+                    "demo_mode": is_demo_mode(),
+                }
             source_name = youtube_url
             yt_url = youtube_url
+
         else:
             assert file is not None
             suffix = Path(file.filename or "video.mp4").suffix or ".mp4"
@@ -191,20 +229,33 @@ async def convert_video(
                 "resolution": f"{meta.width}x{meta.height}",
             }
 
+        chapters = None
+        if yt_url:
+            chapters = await asyncio.to_thread(fetch_youtube_chapters, yt_url)
         suggestions = suggest_convert_options(
             meta.duration_sec,
             width=meta.width,
             height=meta.height,
             fps=meta.fps,
+            chapter_count=len(chapters or []),
+            youtube=bool(yt_url),
         )
+
         convert_opts = ConvertOptions(
             max_frames=suggestions.max_frames,
             max_duration_sec=suggestions.max_duration_sec,
             language=opts.language,
             youtube_url=yt_url,
+            custom_prompt=opts.custom_prompt,
+            chapters=chapters or None,
         )
 
         prep_metrics = perf.snapshot()
+        prep_metrics["estimated_total_minutes"] = suggestions.estimated_total_minutes
+        prep_metrics["estimated_pipeline_minutes"] = suggestions.estimated_pipeline_minutes
+        if chapters:
+            prep_metrics["chapter_count"] = len(chapters)
+        apply_wall_elapsed(prep_metrics, store.load(job_id).created_at)
         store.update(
             job_id,
             status=JobStatus.PENDING,
@@ -214,6 +265,8 @@ async def convert_video(
             title=job_title,
             youtube_video_id=yt_video_id,
             thumbnail_asset=thumbnail_asset,
+            language=opts.language,
+            custom_prompt=opts.custom_prompt,
             metrics=prep_metrics,
         )
         save_metrics_file(store.metrics_path(job_id), prep_metrics)

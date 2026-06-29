@@ -124,12 +124,12 @@ def estimate_pipeline_minutes(
     *,
     rpm_limit: int = HACKATHON_RPM,
     tpm_limit: int = HACKATHON_TPM,
-    tokens_per_call: int = 8_000,
+    tokens_per_call: int = 2_200,
     rpm_headroom: float = 0.92,
     tpm_headroom: float = 0.92,
-    avg_call_sec: float = 0.8,
+    avg_call_sec: float = 0.7,
 ) -> float:
-    """Estimate wall-clock minutes when calls are spread across rate limits."""
+    """Legacy helper: rough wall-clock minutes from total call count."""
     if total_calls <= 0:
         return 0.0
     rpm_cap = max(1, int(rpm_limit * rpm_headroom))

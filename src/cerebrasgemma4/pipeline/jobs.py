@@ -37,6 +37,8 @@ class JobRecord:
     youtube_video_id: str | None = None
     thumbnail_asset: str | None = None
     preview_asset: str | None = None
+    language: str | None = None
+    custom_prompt: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -52,7 +54,7 @@ class JobRecord:
 
 
 def default_jobs_root() -> Path:
-    return Path("/tmp/vid2doc")
+    return Path("/tmp/sightline")
 
 
 class JobStore:
@@ -127,6 +129,8 @@ class JobStore:
         youtube_video_id: str | None = None,
         thumbnail_asset: str | None = None,
         preview_asset: str | None = None,
+        language: str | None = None,
+        custom_prompt: str | None = None,
     ) -> JobRecord:
         record = self.load(job_id)
         if status is not None:
@@ -153,5 +157,9 @@ class JobStore:
             record.thumbnail_asset = thumbnail_asset
         if preview_asset is not None:
             record.preview_asset = preview_asset
+        if language is not None:
+            record.language = language
+        if custom_prompt is not None:
+            record.custom_prompt = custom_prompt
         self.save(record)
         return record

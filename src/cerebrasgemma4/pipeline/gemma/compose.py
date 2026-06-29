@@ -10,12 +10,24 @@ from cerebrasgemma4.pipeline.gemma.analyze import FrameAnalysis
 from cerebrasgemma4.pipeline.transcript import TranscriptResult
 
 
+COMPOSE_DEFAULT_INSTRUCTIONS = (
+    "Write a clear Markdown document from this video analysis.\n\n"
+    "Output Markdown with:\n"
+    "- # Title\n"
+    "- ## Executive summary (3-5 bullets)\n"
+    "- ## Detailed content (sections per key moment with ![caption](assets/...) images)\n"
+    "- ## Key takeaways\n"
+    "Use timestamps in headings. Write in the same language as the transcript."
+)
+
+
 @dataclass
 class ComposeInput:
     source_name: str
     duration_sec: float
     transcript: TranscriptResult
     analyses: list[FrameAnalysis]
+    custom_prompt: str | None = None
 
 
 def _format_timestamp(sec: float) -> str:
@@ -36,22 +48,22 @@ def build_compose_prompt(data: ComposeInput) -> str:
             f"{a.body}\n{quotes}"
         )
     frames_block = "\n\n".join(frame_sections) or "(no key frames selected)"
-    return (
-        "Write a clear Markdown document from this video analysis.\n\n"
-        f"Source: {data.source_name}\n"
-        f"Duration: {_format_timestamp(data.duration_sec)}\n"
-        f"Transcript source: {data.transcript.source}\n\n"
-        "## Full transcript (reference)\n"
-        f"{data.transcript.full_text[:8000]}\n\n"
-        "## Key frame analyses\n"
-        f"{frames_block}\n\n"
-        "Output Markdown with:\n"
-        "- # Title\n"
-        "- ## Executive summary (3-5 bullets)\n"
-        "- ## Detailed content (sections per key moment with ![caption](assets/...) images)\n"
-        "- ## Key takeaways\n"
-        "Use timestamps in headings. Write in the same language as the transcript."
+    parts = [COMPOSE_DEFAULT_INSTRUCTIONS]
+    custom = (data.custom_prompt or "").strip()
+    if custom:
+        parts.append(f"\n\n## Additional instructions from the user\n{custom}")
+    parts.extend(
+        [
+            f"\n\nSource: {data.source_name}",
+            f"Duration: {_format_timestamp(data.duration_sec)}",
+            f"Transcript source: {data.transcript.source}",
+            "\n## Full transcript (reference)",
+            data.transcript.full_text[:8000],
+            "\n## Key frame analyses",
+            frames_block,
+        ]
     )
+    return "\n".join(parts)
 
 
 def compose_stream(data: ComposeInput) -> Iterator[str]:

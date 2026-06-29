@@ -3,7 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from cerebrasgemma4.pipeline.frames import chunk_frames, extract_frames, segment_chunks
+from cerebrasgemma4.pipeline.frames import (
+    REPORT_MIN_HEIGHT,
+    chunk_frames,
+    extract_frames,
+    extract_frames_sparse,
+    extract_report_frame,
+    plan_demo_timestamps,
+    segment_chunks,
+)
 
 
 @pytest.fixture
@@ -51,6 +59,29 @@ def test_chunk_frames(sample_video: Path, tmp_path: Path):
     assert len(chunks[0].frames) == 5
     assert chunks[0].start_sec == 0.0
     assert chunks[0].end_sec == 4.0
+
+
+def test_plan_demo_timestamps_caps_count():
+    stamps = plan_demo_timestamps(600, None, samples_per_region=6, max_frames=20)
+    assert len(stamps) <= 20
+    assert stamps == sorted(stamps)
+
+
+def test_extract_frames_sparse(sample_video: Path, tmp_path: Path):
+    stamps = [0.0, 1.0, 2.0, 3.0]
+    frames = extract_frames_sparse(sample_video, tmp_path / "sparse", stamps, max_height=240)
+    assert len(frames) == 4
+    assert all(f.path.exists() for f in frames)
+
+
+def test_extract_report_frame_at_least_720p(sample_video: Path, tmp_path: Path):
+    out = tmp_path / "report.jpg"
+    extract_report_frame(sample_video, 2.0, out)
+    assert out.exists()
+    from PIL import Image
+
+    with Image.open(out) as img:
+        assert img.height >= REPORT_MIN_HEIGHT
 
 
 def test_segment_chunks():

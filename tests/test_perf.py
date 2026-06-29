@@ -1,7 +1,10 @@
 from pathlib import Path
 
+from datetime import datetime, timedelta, timezone
+
 from cerebrasgemma4.pipeline.perf import (
     PerfTracker,
+    apply_wall_elapsed,
     extract_cerebras_timing,
     normalize_api_call,
     save_metrics_file,
@@ -17,6 +20,37 @@ def test_extract_cerebras_timing():
     assert timing["prompt_tokens"] == 100
     assert timing["ttft_ms"] == 50.0
     assert timing["output_tokens_per_sec"] == 1200
+
+
+def test_summarize_cerebras_queue_sec():
+    calls = [
+        normalize_api_call(
+            stage="scout",
+            label="s1",
+            wall_sec=0.6,
+            usage={"prompt_tokens": 10, "completion_tokens": 5},
+            time_info={"time_to_first_token": 0.04, "total_time": 0.4, "queue_time": 0.12},
+        ),
+        normalize_api_call(
+            stage="analyze",
+            label="a1",
+            wall_sec=0.8,
+            usage={"prompt_tokens": 20, "completion_tokens": 10},
+            time_info={"time_to_first_token": 0.05, "total_time": 0.5, "queue_time": 0.08},
+        ),
+    ]
+    summary = summarize_cerebras(calls)
+    assert summary["queue_sec"] == 0.2
+    assert summary["client_overhead_sec"] >= 0
+
+
+def test_apply_wall_elapsed_prefers_wall_clock():
+    created = (
+        datetime.now(timezone.utc) - timedelta(seconds=45)
+    ).isoformat().replace("+00:00", "Z")
+    result = apply_wall_elapsed({"elapsed_sec": 32.0}, created)
+    assert result["wall_elapsed_sec"] >= 44.5
+    assert result["elapsed_sec"] >= result["wall_elapsed_sec"]
 
 
 def test_summarize_cerebras():

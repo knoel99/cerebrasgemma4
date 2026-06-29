@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -14,6 +15,7 @@ from cerebrasgemma4.api.schemas import (
 )
 from cerebrasgemma4.export import export_filename, render_html_document, render_pdf_bytes
 from cerebrasgemma4.pipeline.jobs import JobRecord, JobStatus, JobStore
+from cerebrasgemma4.pipeline.perf import apply_wall_elapsed
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -58,7 +60,40 @@ def _job_to_summary(record) -> JobSummary:
     )
 
 
+def _estimate_remaining_sec(record: JobRecord) -> float | None:
+    metrics = record.metrics or {}
+    if record.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
+        return 0.0 if record.status == JobStatus.COMPLETED else None
+
+    elapsed = metrics.get("wall_elapsed_sec") or metrics.get("elapsed_sec")
+    if elapsed is None:
+        try:
+            created = datetime.fromisoformat(record.created_at)
+        except ValueError:
+            created = None
+        if created is not None:
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            elapsed = (datetime.now(timezone.utc) - created).total_seconds()
+
+    progress = record.progress or 0
+    if elapsed is not None and progress >= 8:
+        # Progress-weighted ETA tracks real pipeline speed better than prep-time guess.
+        remaining = elapsed * (100.0 - progress) / max(progress, 1.0)
+        return max(0.0, remaining)
+
+    total_min = metrics.get("estimated_total_minutes")
+    if total_min is None or elapsed is None:
+        return None
+    return max(0.0, float(total_min) * 60.0 - elapsed)
+
+
 def _job_to_status(record) -> JobStatusResponse:
+    metrics = dict(record.metrics or {})
+    if record.status not in {JobStatus.COMPLETED, JobStatus.FAILED} and metrics:
+        apply_wall_elapsed(metrics, record.created_at)
+    total_min = metrics.get("estimated_total_minutes")
+    remaining = _estimate_remaining_sec(record)
     return JobStatusResponse(
         job_id=record.job_id,
         status=record.status.value,
@@ -66,7 +101,7 @@ def _job_to_status(record) -> JobStatusResponse:
         message=record.message,
         created_at=record.created_at,
         document_path=record.document_path,
-        metrics=record.metrics,
+        metrics=metrics,
         error=record.error,
         source_name=record.source_name,
         source_type=record.source_type,
@@ -74,6 +109,10 @@ def _job_to_status(record) -> JobStatusResponse:
         youtube_video_id=record.youtube_video_id,
         thumbnail_asset=record.thumbnail_asset,
         preview_asset=record.preview_asset,
+        estimated_total_minutes=total_min,
+        estimated_remaining_sec=round(remaining, 1) if remaining is not None else None,
+        language=record.language,
+        custom_prompt=record.custom_prompt,
     )
 
 
@@ -122,7 +161,7 @@ def export_html(job_id: str):
     store = _get_store()
     record, doc_path, assets_dir = _require_completed_job(store, job_id)
     markdown_text = doc_path.read_text(encoding="utf-8")
-    title = record.title or "Vid2Doc Report"
+    title = record.title or "Sightline Report"
     html_doc = render_html_document(markdown_text, assets_dir=assets_dir, title=title)
     filename = export_filename(record.title, job_id, "html")
     return Response(
@@ -137,7 +176,7 @@ def export_pdf(job_id: str):
     store = _get_store()
     record, doc_path, assets_dir = _require_completed_job(store, job_id)
     markdown_text = doc_path.read_text(encoding="utf-8")
-    title = record.title or "Vid2Doc Report"
+    title = record.title or "Sightline Report"
     html_doc = render_html_document(markdown_text, assets_dir=assets_dir, title=title)
     try:
         pdf_bytes = render_pdf_bytes(html_doc)
@@ -179,7 +218,7 @@ def download_metrics_file(job_id: str):
     return FileResponse(
         path,
         media_type="application/json",
-        filename=f"vid2doc-metrics-{job_id[:8]}.json",
+        filename=f"sightline-metrics-{job_id[:8]}.json",
     )
 
 

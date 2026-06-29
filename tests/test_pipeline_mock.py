@@ -76,7 +76,8 @@ def _mock_compose(_data):
     )
 
 
-def test_pipeline_with_mocks(sample_video: Path, tmp_path: Path):
+def test_pipeline_with_mocks(sample_video: Path, tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SIGHTLINE_DEMO_MODE", "0")
     store = JobStore(root=tmp_path / "jobs")
     record = store.create()
     job_id = record.job_id
@@ -85,7 +86,7 @@ def test_pipeline_with_mocks(sample_video: Path, tmp_path: Path):
 
     with (
         patch("cerebrasgemma4.pipeline.orchestrator.get_transcript") as mock_tx,
-        patch("cerebrasgemma4.pipeline.orchestrator.scout_chunk", side_effect=_mock_scout),
+        patch("cerebrasgemma4.pipeline.gemma.scout_strategy.scout_chunk", side_effect=_mock_scout),
         patch("cerebrasgemma4.pipeline.orchestrator.analyze_frame", side_effect=_mock_analyze),
         patch("cerebrasgemma4.pipeline.orchestrator.compose_complete", side_effect=_mock_compose),
     ):
@@ -105,6 +106,7 @@ def test_pipeline_with_mocks(sample_video: Path, tmp_path: Path):
         )
 
     assert doc.exists()
+    assert not video_copy.exists()
     text = doc.read_text(encoding="utf-8")
     assert "Test Document" in text
     record = store.load(job_id)
@@ -115,3 +117,8 @@ def test_pipeline_with_mocks(sample_video: Path, tmp_path: Path):
     assert record.metrics["scout_calls"] >= 1
     assert "steps" in record.metrics
     assert "cerebras" in record.metrics
+    from cerebrasgemma4.pipeline.context import load_context
+
+    ctx = load_context(store.path(job_id))
+    assert ctx is not None
+    assert ctx.transcript_full_text

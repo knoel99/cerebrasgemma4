@@ -18,6 +18,11 @@ class ConvertOptionsSchema(BaseModel):
     language: str = "auto"
     document_style: DocumentStyle = DocumentStyle.AUTO
     include_transcript: bool = True
+    custom_prompt: str | None = Field(default=None, max_length=4000)
+
+
+class DefaultsResponse(BaseModel):
+    compose_prompt: str
 
 
 class ConvertResponse(BaseModel):
@@ -40,6 +45,10 @@ class JobStatusResponse(BaseModel):
     youtube_video_id: str | None = None
     thumbnail_asset: str | None = None
     preview_asset: str | None = None
+    estimated_total_minutes: float | None = None
+    estimated_remaining_sec: float | None = None
+    language: str | None = None
+    custom_prompt: str | None = None
 
 
 class JobSummary(BaseModel):
@@ -67,6 +76,39 @@ class DocumentResponse(BaseModel):
     assets: list[str] = Field(default_factory=list)
 
 
+class ChatEnrichmentSchema(BaseModel):
+    title: str
+    markdown: str
+
+
+class ChatMessageSchema(BaseModel):
+    role: str
+    content: str
+    created_at: str | None = None
+    enrichment: ChatEnrichmentSchema | None = None
+
+
+class ChatHistoryResponse(BaseModel):
+    job_id: str
+    messages: list[ChatMessageSchema] = Field(default_factory=list)
+    has_context: bool = False
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class ApplyEnrichmentRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    markdown: str = Field(min_length=1, max_length=32000)
+
+
+class ApplyEnrichmentResponse(BaseModel):
+    job_id: str
+    markdown: str
+    revision: int
+
+
 class ProbeResponse(BaseModel):
     duration_sec: float
     max_duration_sec: float
@@ -80,6 +122,7 @@ class ProbeResponse(BaseModel):
     within_hackathon_rpm: bool
     hackathon_capped: bool = False
     estimated_pipeline_minutes: float = 0.0
+    estimated_total_minutes: float = 0.0
     hackathon_rpm: int
     hackathon_tpm: int
     note: str = ""

@@ -4,7 +4,7 @@ const themeToggle = $("#theme-toggle");
 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  localStorage.setItem("vid2doc-theme", theme);
+  localStorage.setItem("sightline-theme", theme);
   if (!themeToggle) return;
   const isLight = theme === "light";
   themeToggle.textContent = isLight ? "☾" : "☀";
@@ -33,37 +33,75 @@ const convertBtn = $("#convert-btn");
 const progressWrap = $("#progress-wrap");
 const progressFill = $("#progress-fill");
 const progressPct = $("#progress-pct");
+const progressEta = $("#progress-eta");
 const statusMsg = $("#status-msg");
-const metricsEl = $("#metrics");
 const perfPanel = $("#perf-panel");
+const headerLive = $("#header-live");
 const outputEmpty = $("#output-empty");
 const docPreview = $("#doc-preview");
 const docRaw = $("#doc-raw");
 const btnPreview = $("#btn-preview");
 const btnRaw = $("#btn-raw");
+const chatPane = $("#chat-pane");
+const chatEmpty = $("#chat-empty");
+const chatMessages = $("#chat-messages");
+const chatForm = $("#chat-form");
+const chatInput = $("#chat-input");
+const chatSend = $("#chat-send");
+const chatContextWarn = $("#chat-context-warn");
+const chatSuggestions = $("#chat-suggestions");
 const btnDownloadMd = $("#btn-download-md");
 const btnDownloadHtml = $("#btn-download-html");
 const btnDownloadPdf = $("#btn-download-pdf");
 const btnExportMetrics = $("#btn-export-metrics");
+const btnExportMenu = $("#btn-export-menu");
+const exportDropdown = $("#export-dropdown");
+const exportMenu = $("#export-menu");
 const historyList = $("#history-list");
+const historyCount = $("#history-count");
 const btnRefreshHistory = $("#btn-refresh-history");
+const promptDefault = $("#prompt-default");
+const promptCustom = $("#prompt-custom");
 
 let selectedFile = null;
 let videoDurationSec = null;
 let currentJobId = null;
 let pollTimer = null;
+let pollGeneration = 0;
+let plannedGanttTimer = null;
+let plannedGanttStartedAt = 0;
+let liveClockTimer = null;
+let liveClockCreatedAt = null;
+let lastRenderedMetricsKey = "";
 let lastMarkdown = "";
 let lastMetrics = null;
+let chatSending = false;
+let chatHasContext = true;
+const enrichmentStore = new Map();
+let enrichmentIdSeq = 0;
 
 const HACKATHON_RPM = 100;
+const ACTIVE_JOB_KEY = "sightline-active-job";
+const POLL_INTERVAL_MS = 800;
+const POLL_ERROR_RETRY_MS = 1500;
+const POLL_MAX_ERRORS = 8;
+const LIVE_API_CALLS_CAP = 40;
+const RUNNING_STATUSES = new Set([
+  "pending",
+  "extracting",
+  "transcribing",
+  "analyzing",
+  "composing",
+]);
+const HISTORY_OPEN_STATUSES = new Set(["completed", "failed", ...RUNNING_STATUSES]);
+
+function activateTab(paneId) {
+  tabs.forEach((t) => t.classList.toggle("active", t.dataset.pane === paneId));
+  panes.forEach((p) => p.classList.toggle("active", p.id === paneId));
+}
 
 tabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    tabs.forEach((t) => t.classList.remove("active"));
-    panes.forEach((p) => p.classList.remove("active"));
-    tab.classList.add("active");
-    document.getElementById(tab.dataset.pane).classList.add("active");
-  });
+  tab.addEventListener("click", () => activateTab(tab.dataset.pane));
 });
 
 dropzone.addEventListener("click", () => fileInput.click());
@@ -117,13 +155,20 @@ function updateEstimate() {
   const scout = probeData.estimated_scout_calls;
   const analyze = probeData.estimated_analyze_calls;
   const total = probeData.estimated_total_api_calls;
-  const breakdown = `scout ${scout} + analyze ${analyze} + compose 1`;
-  const durationNote = `Full video · ${formatDuration(probeData.duration_sec)} · ${probeData.max_frames} key frames`;
-  const paceNote = formatPipelineMinutes(probeData.estimated_pipeline_minutes);
-  box.classList.remove("warn");
-  box.textContent = `${durationNote} · ~${total} Cerebras calls (${breakdown})${
-    paceNote ? ` · est. ${paceNote} with rate limiting` : ""
+  const durationNote = `Full video · ${formatDuration(probeData.duration_sec)}${
+    probeData.max_frames != null ? ` · ${probeData.max_frames} key frames` : ""
   }`;
+  const totalNote = formatPipelineMinutes(
+    probeData.estimated_total_minutes ?? probeData.estimated_pipeline_minutes,
+  );
+  let callsNote = "";
+  if (total != null && scout != null && analyze != null) {
+    callsNote = ` · ~${total} Cerebras calls (scout ${scout} + analyze ${analyze} + compose 1)`;
+  } else if (total != null) {
+    callsNote = ` · ~${total} Cerebras calls`;
+  }
+  box.classList.remove("warn");
+  box.textContent = `${durationNote}${callsNote}${totalNote ? ` · est. ${totalNote} total` : ""}`;
 }
 
 async function probeFile(file) {
@@ -155,10 +200,12 @@ function showVideoInfo(meta, sourceLabel) {
   el.textContent =
     `${sourceLabel} · ${formatDuration(meta.duration_sec)} · ${meta.width}×${meta.height}` +
     (meta.fps ? ` · ${meta.fps} fps` : "") +
-    ` · full video · ${meta.max_frames} key frames` +
-    ` · ~${meta.estimated_total_api_calls} Cerebras calls` +
-    (meta.estimated_pipeline_minutes
-      ? ` · est. ${formatPipelineMinutes(meta.estimated_pipeline_minutes)}`
+    (meta.max_frames != null ? ` · full video · ${meta.max_frames} key frames` : " · full video") +
+    (meta.estimated_total_api_calls != null
+      ? ` · ~${meta.estimated_total_api_calls} Cerebras calls`
+      : "") +
+    (meta.estimated_total_minutes || meta.estimated_pipeline_minutes
+      ? ` · est. ${formatPipelineMinutes(meta.estimated_total_minutes ?? meta.estimated_pipeline_minutes)} total`
       : "");
 }
 
@@ -218,8 +265,47 @@ function historyStatusClass(status) {
   return "history-status--running";
 }
 
+function canOpenHistoryJob(job) {
+  return HISTORY_OPEN_STATUSES.has(job.status);
+}
+
+function formatJobError(error) {
+  if (!error) return "Pipeline failed";
+  const lines = String(error)
+    .trim()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (line.startsWith("Traceback") || line.startsWith('File "')) continue;
+    return line.replace(/^[\w.]+Error:\s*/, "");
+  }
+  return lines[lines.length - 1] || "Pipeline failed";
+}
+
+function showFailedJobReport(job) {
+  outputEmpty.style.display = "none";
+  docPreview.innerHTML = "";
+  docPreview.classList.remove("visible");
+  docRaw.textContent = job.error || formatJobError(job.error);
+  docRaw.classList.add("visible");
+  btnPreview?.classList.remove("active");
+  btnRaw?.classList.add("active");
+  setExportButtonsEnabled(false);
+  setChatEnabled(false);
+}
+
 function renderHistory(jobs) {
   if (!historyList) return;
+  if (historyCount) {
+    if (jobs.length) {
+      historyCount.textContent = String(jobs.length);
+      historyCount.hidden = false;
+    } else {
+      historyCount.hidden = true;
+    }
+  }
   if (!jobs.length) {
     historyList.innerHTML = '<li class="history-empty">No reports yet.</li>';
     return;
@@ -236,10 +322,11 @@ function renderHistory(jobs) {
         .filter(Boolean)
         .join(" · ");
       const active = job.job_id === currentJobId ? " active" : "";
-      const canOpen = job.status === "completed";
+      const canOpen = canOpenHistoryJob(job);
+      const failed = job.status === "failed" ? " history-item--failed" : "";
       const openable = canOpen ? ' data-openable="true" role="button" tabindex="0"' : "";
       return `
-        <li class="history-item${active}${canOpen ? " history-item--openable" : ""}" data-job-id="${job.job_id}"${openable}>
+        <li class="history-item${active}${failed}${canOpen ? " history-item--openable" : ""}" data-job-id="${job.job_id}"${openable}>
           ${historyMediaHtml(job)}
           <div class="history-item-main">
             <span class="history-item-title">${escapeHtml(historyLabel(job))}</span>
@@ -264,6 +351,66 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
+const LATEX_SYMBOLS = {
+  "\\rightarrow": "→",
+  "\\leftarrow": "←",
+  "\\Rightarrow": "⇒",
+  "\\Leftrightarrow": "⇔",
+  "\\leftrightarrow": "↔",
+  "\\times": "×",
+  "\\cdot": "·",
+  "\\leq": "≤",
+  "\\geq": "≥",
+  "\\neq": "≠",
+  "\\infty": "∞",
+  "\\pm": "±",
+  "\\approx": "≈",
+};
+
+function replaceLatexSymbols(body) {
+  let out = body;
+  for (const [cmd, ch] of Object.entries(LATEX_SYMBOLS)) {
+    out = out.split(cmd).join(ch);
+  }
+  return out;
+}
+
+function normalizeInlineLatex(markdown) {
+  return markdown
+    .replace(/\$\$([\s\S]+?)\$\$/g, (match, body) => {
+      const normalized = replaceLatexSymbols(body.trim());
+      return /\\/.test(normalized) ? match : normalized;
+    })
+    .replace(/\$([^\$\n]+?)\$/g, (match, body) => {
+      const normalized = replaceLatexSymbols(body.trim());
+      return /\\/.test(normalized) ? match : normalized;
+    });
+}
+
+function renderMarkdownPreview(markdown, jobId) {
+  const html = marked.parse(rewriteAssetUrls(normalizeInlineLatex(markdown), jobId));
+  docPreview.innerHTML = html;
+}
+
+function configureMarked() {
+  if (typeof marked === "undefined" || marked.__sightlineFigures) return;
+  marked.use({
+    renderer: {
+      image({ href, title, text }) {
+        const alt = escapeHtml(text || "");
+        const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+        const caption = text
+          ? `<figcaption class="doc-figcaption">${alt}</figcaption>`
+          : "";
+        return `<figure class="doc-figure"><img src="${href}" alt="${alt}"${titleAttr} loading="lazy">${caption}</figure>`;
+      },
+    },
+  });
+  marked.__sightlineFigures = true;
+}
+
+configureMarked();
+
 async function loadHistory() {
   if (!historyList) return;
   try {
@@ -276,21 +423,155 @@ async function loadHistory() {
   }
 }
 
+function probeFromJobMetrics(job) {
+  const metrics = job.metrics || {};
+  const steps = metrics.steps || [];
+  const probeStep = steps.find(
+    (s) => s.label && s.label.toLowerCase().includes("video probe"),
+  );
+  const detail = probeStep?.detail || {};
+  const duration = detail.duration_sec;
+  if (duration == null) return null;
+
+  let width = 0;
+  let height = 0;
+  if (detail.resolution) {
+    const [w, h] = detail.resolution.split("x").map(Number);
+    width = w || 0;
+    height = h || 0;
+  }
+
+  const scout = metrics.scout_calls;
+  const analyze = metrics.analyze_calls ?? metrics.selected_frames;
+  const total =
+    scout != null && analyze != null ? scout + analyze + 1 : metrics.cerebras?.calls;
+
+  return {
+    duration_sec: duration,
+    width,
+    height,
+    fps: detail.fps || 0,
+    max_frames: metrics.selected_frames ?? metrics.frame_count,
+    estimated_scout_calls: scout,
+    estimated_analyze_calls: analyze,
+    estimated_total_api_calls: total,
+    estimated_total_minutes: metrics.estimated_total_minutes,
+    estimated_pipeline_minutes: metrics.estimated_pipeline_minutes,
+  };
+}
+
+function restoreJobInputs(job) {
+  const sourceType = job.source_type === "file" ? "file" : "youtube";
+  const languageSelect = $("#language");
+  if (languageSelect) {
+    languageSelect.value = job.language || "auto";
+  }
+  if (promptCustom) {
+    promptCustom.value = job.custom_prompt || "";
+  }
+
+  if (sourceType === "youtube") {
+    activateTab("pane-youtube");
+    const url =
+      job.source_name ||
+      (job.youtube_video_id
+        ? `https://www.youtube.com/watch?v=${job.youtube_video_id}`
+        : "");
+    youtubeInput.value = url;
+    selectedFile = null;
+    fileName.textContent = "";
+    fileInput.value = "";
+  } else {
+    activateTab("pane-upload");
+    selectedFile = null;
+    fileInput.value = "";
+    fileName.textContent = job.source_name || "";
+    youtubeInput.value = "";
+  }
+
+  const probeLike = probeFromJobMetrics(job);
+  if (probeLike) {
+    applyProbeData(probeLike);
+    showVideoInfo(probeLike, sourceType === "youtube" ? "YouTube" : "File");
+  } else {
+    probeData = null;
+    videoDurationSec = null;
+    $("#video-info").hidden = true;
+    updateEstimate();
+  }
+}
+
+function persistActiveJob(jobId) {
+  if (jobId) {
+    localStorage.setItem(ACTIVE_JOB_KEY, jobId);
+    syncJobUrl(jobId);
+  } else {
+    localStorage.removeItem(ACTIVE_JOB_KEY);
+    syncJobUrl(null);
+  }
+}
+
+function syncJobUrl(jobId) {
+  const url = new URL(window.location.href);
+  if (jobId) url.searchParams.set("job", jobId);
+  else url.searchParams.delete("job");
+  window.history.replaceState({}, "", url);
+}
+
+async function attachToJob(job, { resumePoll = false } = {}) {
+  currentJobId = job.job_id || currentJobId;
+  persistActiveJob(currentJobId);
+  restoreJobInputs(job);
+  progressWrap.classList.add("visible");
+  perfPanel.classList.add("active");
+
+  if (job.metrics) renderPerformance(enrichLiveMetrics(job) || job.metrics);
+
+  if (job.status === "completed") {
+    await finalizeCompletedJob(job);
+    return;
+  }
+
+  if (job.status === "failed") {
+    finalizeFailedJob(job, { clearPersist: false });
+    return;
+  }
+
+  if (RUNNING_STATUSES.has(job.status)) {
+    convertBtn.disabled = true;
+    setProgress(job.progress, job.message || job.status, false, job);
+    startLiveClock(job.created_at, job.status);
+    if (resumePoll) pollJob();
+  }
+}
+
 async function openHistoryJob(jobId) {
-  currentJobId = jobId;
   try {
     const jobRes = await fetch(`/api/jobs/${jobId}`);
     if (!jobRes.ok) throw new Error("Job not found");
     const job = await jobRes.json();
-    if (job.status !== "completed") {
-      setProgress(job.progress, job.message || job.status);
-      return;
-    }
-    if (job.metrics) renderPerformance(job.metrics);
-    await loadDocument(jobId);
+    await attachToJob(job, { resumePoll: RUNNING_STATUSES.has(job.status) });
     await loadHistory();
   } catch (e) {
     setProgress(0, e.message, true);
+  }
+}
+
+async function resumeActiveJob() {
+  const params = new URLSearchParams(window.location.search);
+  const jobId = params.get("job") || localStorage.getItem(ACTIVE_JOB_KEY);
+  if (!jobId) return;
+
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    if (!res.ok) {
+      persistActiveJob(null);
+      return;
+    }
+    const job = await res.json();
+    await attachToJob(job, { resumePoll: RUNNING_STATUSES.has(job.status) });
+  } catch {
+    persistActiveJob(null);
   }
 }
 
@@ -301,6 +582,7 @@ async function deleteHistoryJob(jobId) {
     if (!res.ok) throw new Error("Could not delete report");
     if (currentJobId === jobId) {
       currentJobId = null;
+      persistActiveJob(null);
       resetOutput();
       setProgress(0, "Report deleted.");
     }
@@ -320,12 +602,389 @@ function fmtMs(v) {
   return `${Number(v).toFixed(0)} ms`;
 }
 
-function setProgress(pct, message, isError = false) {
+const GANTT_TICKS = 4;
+
+function ganttAxisTicks(totalSec) {
+  const ticks = [];
+  for (let i = 0; i <= GANTT_TICKS; i++) {
+    ticks.push({ sec: (totalSec * i) / GANTT_TICKS, pct: (i / GANTT_TICKS) * 100 });
+  }
+  return ticks;
+}
+
+function computeGanttLayout(steps, elapsedSec, estimatedTotalSec) {
+  let offset = 0;
+  const rows = steps.map((step) => {
+    const start = offset;
+    let dur = step.duration_sec;
+    if (dur == null && step.status === "running") {
+      dur = Math.max(0.05, (elapsedSec ?? offset) - start);
+    }
+    if (dur != null) offset += dur;
+    return { step, start_sec: start, display_dur: dur };
+  });
+  const summed = rows.reduce((sum, row) => sum + (row.display_dur ?? 0), 0);
+  const total = Math.max(
+    elapsedSec ?? 0,
+    summed,
+    estimatedTotalSec ?? 0,
+    0.001,
+  );
+  return { rows, total };
+}
+
+function buildPlannedPipelineSteps(probe, sourceType, phase = "convert") {
+  const scoutDetail =
+    probe?.estimated_scout_calls != null
+      ? { planned_calls: probe.estimated_scout_calls }
+      : {};
+  const analyzeDetail =
+    probe?.estimated_analyze_calls != null
+      ? { planned_frames: probe.estimated_analyze_calls }
+      : probe?.max_frames != null
+        ? { planned_frames: probe.max_frames }
+        : {};
+
+  const pipelineTail = [
+    {
+      id: "extract_frames",
+      label: "Frame extraction (1 fps)",
+      kind: "local",
+      status: "pending",
+      duration_sec: null,
+    },
+    {
+      id: "transcript",
+      label: "Transcription",
+      kind: "local",
+      status: "pending",
+      duration_sec: null,
+    },
+    {
+      id: "scout",
+      label: "Scout frames (Gemma 4 · Cerebras)",
+      kind: "cerebras",
+      status: "pending",
+      duration_sec: null,
+      detail: scoutDetail,
+    },
+    {
+      id: "analyze",
+      label: "Frame analysis (Gemma 4 · Cerebras)",
+      kind: "cerebras",
+      status: "pending",
+      duration_sec: null,
+      detail: analyzeDetail,
+    },
+    {
+      id: "compose",
+      label: "Document writing (Gemma 4 · Cerebras)",
+      kind: "cerebras",
+      status: "pending",
+      duration_sec: null,
+    },
+  ];
+
+  if (sourceType === "youtube") {
+    return [
+      {
+        id: "youtube_metadata",
+        label: "YouTube metadata",
+        kind: "local",
+        status: phase === "probe" ? "running" : "done",
+        duration_sec: phase === "probe" ? null : 0.01,
+      },
+      {
+        id: "thumbnail_download",
+        label: "YouTube thumbnail",
+        kind: "local",
+        status: phase === "probe" ? "pending" : "done",
+        duration_sec: phase === "probe" ? null : 0.01,
+      },
+      {
+        id: "youtube_download",
+        label: "YouTube video download",
+        kind: "local",
+        status: phase === "convert" ? "running" : "pending",
+        duration_sec: null,
+      },
+      {
+        id: "video_probe",
+        label: "Video probe (ingest)",
+        kind: "local",
+        status: "pending",
+        duration_sec: null,
+      },
+      ...pipelineTail,
+    ];
+  }
+
+  return [
+    {
+      id: "file_upload",
+      label: "File upload",
+      kind: "local",
+      status: phase === "convert" ? "running" : "pending",
+      duration_sec: null,
+    },
+    {
+      id: "video_probe",
+      label: "Video probe (ingest)",
+      kind: "local",
+      status: "pending",
+      duration_sec: null,
+    },
+    ...pipelineTail,
+  ];
+}
+
+function buildPlannedMetrics(probe, sourceType, phase = "convert", elapsedSec = 0.05) {
+  const estimatedTotalSec =
+    probe?.estimated_total_minutes != null
+      ? probe.estimated_total_minutes * 60
+      : probe?.estimated_pipeline_minutes != null
+        ? probe.estimated_pipeline_minutes * 60
+        : null;
+
+  return {
+    elapsed_sec: elapsedSec,
+    estimated_total_minutes: probe?.estimated_total_minutes,
+    estimated_pipeline_minutes: probe?.estimated_pipeline_minutes,
+    steps: buildPlannedPipelineSteps(probe, sourceType, phase),
+    cerebras: { calls: 0, wall_sec: 0 },
+    api_calls: [],
+    planned: true,
+    estimated_total_sec: estimatedTotalSec,
+  };
+}
+
+function stopPlannedGanttTimer() {
+  if (plannedGanttTimer) {
+    clearInterval(plannedGanttTimer);
+    plannedGanttTimer = null;
+  }
+}
+
+function wallElapsedSec(createdAt) {
+  if (!createdAt) return null;
+  const started = new Date(createdAt).getTime();
+  if (Number.isNaN(started)) return null;
+  return Math.max(0, (Date.now() - started) / 1000);
+}
+
+function stopLiveClock() {
+  if (liveClockTimer) {
+    clearInterval(liveClockTimer);
+    liveClockTimer = null;
+  }
+  liveClockCreatedAt = null;
+}
+
+function startLiveClock(createdAt, status) {
+  if (!createdAt || !RUNNING_STATUSES.has(status)) {
+    stopLiveClock();
+    return;
+  }
+  liveClockCreatedAt = createdAt;
+  if (liveClockTimer) return;
+
+  const tick = () => {
+    if (!liveClockCreatedAt) return;
+    const elapsed = wallElapsedSec(liveClockCreatedAt);
+    if (elapsed == null) return;
+
+    const base = lastMetrics || {
+      steps: [],
+      cerebras: { calls: 0, wall_sec: 0 },
+      api_calls: [],
+    };
+    const metrics = {
+      ...base,
+      elapsed_sec: Math.max(base.elapsed_sec ?? 0, elapsed),
+    };
+
+    const elapsedLabel = fmtSec(metrics.elapsed_sec);
+    $("#m-elapsed").textContent = elapsedLabel;
+    setStatValues(["ps-total", "ps-total-full"], elapsedLabel);
+    renderGanttChart(metrics);
+  };
+
+  tick();
+  liveClockTimer = setInterval(tick, 1000);
+}
+
+function openPerfPanel({ scroll = true } = {}) {
+  if (!perfPanel) return;
+  perfPanel.open = true;
+  perfPanel.classList.add("active");
+  if (scroll) perfPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function showBootstrapGantt(message = "Preparing…") {
+  perfPanel.classList.add("active");
+  renderPerformance(
+    {
+      elapsed_sec: 0.05,
+      steps: [
+        {
+          id: "bootstrap",
+          label: message,
+          kind: "local",
+          status: "running",
+          duration_sec: null,
+        },
+      ],
+      cerebras: { calls: 0, wall_sec: 0 },
+      api_calls: [],
+      planned: true,
+    },
+    { live: true },
+  );
+  openPerfPanel();
+}
+
+function showPlannedGantt(probe, sourceType, phase = "convert") {
+  plannedGanttStartedAt = Date.now();
+  stopPlannedGanttTimer();
+  perfPanel.classList.add("active");
+
+  const render = () => {
+    const elapsed = Math.max(0.05, (Date.now() - plannedGanttStartedAt) / 1000);
+    const elapsedLabel = fmtSec(elapsed);
+    $("#m-elapsed").textContent = elapsedLabel;
+    setStatValues(["ps-total", "ps-total-full"], elapsedLabel);
+    renderPerformance(buildPlannedMetrics(probe, sourceType, phase, elapsed), {
+      live: true,
+    });
+  };
+
+  render();
+  plannedGanttTimer = setInterval(render, 500);
+  openPerfPanel();
+}
+
+function renderGanttChart(metrics) {
+  const steps = metrics.steps || [];
+  if (!steps.length) {
+    $("#gantt-chart").innerHTML = "";
+    return;
+  }
+
+  const estimatedTotalSec =
+    metrics.estimated_total_sec ??
+    (metrics.estimated_total_minutes != null
+      ? metrics.estimated_total_minutes * 60
+      : null);
+  const { rows, total } = computeGanttLayout(
+    steps,
+    metrics.elapsed_sec,
+    estimatedTotalSec,
+  );
+  const ticks = ganttAxisTicks(total);
+  const axisHtml = ticks
+    .map(
+      (tick) =>
+        `<span class="gantt-axis-tick" style="left:${tick.pct}%">${fmtSec(tick.sec)}</span>`
+    )
+    .join("");
+
+  const rowsHtml = rows
+    .map(({ step, start_sec, display_dur }) => {
+      const isCerebras = step.kind === "cerebras";
+      const kindClass = isCerebras ? "cerebras" : "local";
+      const kindLabel = isCerebras ? "Cerebras" : "local";
+      const durLabel = display_dur != null ? fmtSec(display_dur) : "…";
+      const startPct = (start_sec / total) * 100;
+      const widthPct =
+        display_dur != null ? Math.max((display_dur / total) * 100, 0.35) : 0;
+      const showBarLabel = widthPct >= 7;
+      const detail = step.detail
+        ? Object.entries(step.detail)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(" · ")
+        : "";
+      const barHtml =
+        display_dur != null
+          ? `<div class="gantt-bar gantt-bar--${kindClass}${
+              step.status === "running" ? " gantt-bar--running" : ""
+            }" style="left:${startPct}%;width:${widthPct}%" title="${step.label}: ${durLabel}">${
+              showBarLabel ? `<span class="gantt-bar-label">${durLabel}</span>` : ""
+            }</div>`
+          : "";
+      return `
+        <div class="gantt-row step-item ${step.status || ""}${
+          step.status === "pending" ? " gantt-row--pending" : ""
+        }">
+          <div class="gantt-row-label">
+            <span class="gantt-status-dot" aria-hidden="true"></span>
+            <div class="gantt-row-text">
+              <span class="gantt-row-title">${step.label}</span>
+              <span class="gantt-row-meta">${kindLabel}${detail ? ` · ${detail}` : ""}</span>
+            </div>
+            <span class="gantt-row-duration step-duration--${kindClass}">${durLabel}</span>
+          </div>
+          <div class="gantt-row-chart">${barHtml}</div>
+        </div>`;
+    })
+    .join("");
+
+  $("#gantt-chart").innerHTML = `
+    <div class="gantt-header">
+      <div class="gantt-header-label">Step</div>
+      <div class="gantt-axis">${axisHtml}</div>
+    </div>
+    <div class="gantt-body">${rowsHtml}</div>
+    <div class="gantt-legend">
+      <span class="gantt-legend-item">
+        <span class="gantt-legend-swatch gantt-legend-swatch--local"></span> Local
+      </span>
+      <span class="gantt-legend-item">
+        <span class="gantt-legend-swatch gantt-legend-swatch--cerebras"></span> Cerebras
+      </span>
+      <span class="gantt-legend-total">Total ${fmtSec(total)}</span>
+    </div>`;
+}
+
+function formatProgressEta(job) {
+  const totalMin =
+    job?.estimated_total_minutes ??
+    job?.metrics?.estimated_total_minutes ??
+    probeData?.estimated_total_minutes ??
+    probeData?.estimated_pipeline_minutes;
+  if (totalMin == null || Number.isNaN(Number(totalMin))) return "";
+
+  const totalLabel = formatPipelineMinutes(totalMin);
+  if (!totalLabel) return "";
+
+  if (job?.status === "completed") {
+    const elapsed = job.metrics?.elapsed_sec;
+    return elapsed != null ? `Done in ${formatDuration(elapsed)}` : `Est. ${totalLabel} total`;
+  }
+  if (job?.status === "failed") return "";
+
+  const remainingSec = job?.estimated_remaining_sec;
+  if (remainingSec != null && remainingSec > 0) {
+    return `Est. ${totalLabel} total · ~${formatDuration(remainingSec)} left`;
+  }
+  return `Est. ${totalLabel} total`;
+}
+
+function setProgress(pct, message, isError = false, job = null) {
   progressWrap.classList.add("visible");
   progressFill.style.width = `${pct}%`;
   progressPct.textContent = `${Math.round(pct)}%`;
   statusMsg.textContent = message;
   statusMsg.classList.toggle("error", isError);
+  if (progressEta) {
+    progressEta.textContent = formatProgressEta(job);
+  }
+}
+
+function setStatValues(ids, text) {
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
 }
 
 function updateHeroStats(metrics) {
@@ -334,84 +993,160 @@ function updateHeroStats(metrics) {
   const tps = cerebras.avg_output_tokens_per_sec;
   const llm = metrics.cerebras_llm_sec ?? cerebras.wall_sec;
   const calls = cerebras.calls;
-  if (tps != null) $("#hero-tps").textContent = tps;
-  if (llm != null) $("#hero-llm").textContent = fmtSec(llm);
+  if (tps != null) {
+    $("#hero-tps").textContent = tps;
+    setStatValues(["m-tps", "m-tps-full"], String(tps));
+  }
+  if (llm != null) {
+    const llmLabel = fmtSec(llm);
+    $("#hero-llm").textContent = llmLabel;
+    setStatValues(["ps-cerebras", "ps-cerebras-full"], llmLabel);
+    $("#m-llm").textContent = llmLabel;
+  }
   if (calls != null) $("#hero-calls").textContent = String(calls);
+  if (headerLive) headerLive.hidden = false;
 }
 
-function renderPerformance(metrics) {
-  if (!metrics) return;
-  lastMetrics = metrics;
-  perfPanel.classList.add("active");
-  metricsEl.classList.add("visible");
+function metricsRenderKey(metrics) {
+  const calls = metrics.api_calls?.length ?? 0;
+  const steps = metrics.steps?.length ?? 0;
+  const elapsed = metrics.elapsed_sec ?? 0;
+  const lastStep = metrics.steps?.[steps - 1];
+  const lastStatus = lastStep?.status ?? "";
+  const lastDetail = lastStep?.detail
+    ? JSON.stringify(lastStep.detail)
+    : "";
+  return `${calls}|${steps}|${elapsed}|${lastStatus}|${lastDetail}`;
+}
 
-  const cerebras = metrics.cerebras || {};
-  $("#m-elapsed").textContent = fmtSec(metrics.elapsed_sec);
-  $("#m-llm").textContent = fmtSec(metrics.cerebras_llm_sec ?? cerebras.wall_sec);
-  $("#m-tps").textContent =
-    cerebras.avg_output_tokens_per_sec != null
-      ? `${cerebras.avg_output_tokens_per_sec}`
-      : "—";
-  updateHeroStats(metrics);
+const LIVE_STEP_BY_STATUS = {
+  pending: { id: "queued", label: "Queued", kind: "local" },
+  extracting: { id: "extract_frames", label: "Extracting frames", kind: "local" },
+  transcribing: { id: "transcript", label: "Transcription", kind: "local" },
+  analyzing: { id: "scout", label: "Scout & analyze", kind: "cerebras" },
+  composing: { id: "compose", label: "Writing document", kind: "cerebras" },
+};
 
-  $("#ps-ingest").textContent = fmtSec(metrics.ingest_sec);
-  $("#ps-local").textContent = fmtSec(metrics.local_prep_sec);
-  $("#ps-cerebras").textContent = fmtSec(metrics.cerebras_llm_sec ?? cerebras.wall_sec);
-  $("#ps-ttft").textContent = fmtMs(cerebras.avg_ttft_ms);
-  $("#ps-tokens").textContent =
-    cerebras.completion_tokens != null ? `${cerebras.completion_tokens}` : "—";
-  $("#ps-calls").textContent = cerebras.calls != null ? `${cerebras.calls}` : "—";
+function enrichLiveMetrics(job) {
+  if (!job?.metrics) return null;
+  const metrics = {
+    ...job.metrics,
+    steps: [...(job.metrics.steps || [])],
+  };
 
-  const steps = metrics.steps || [];
-  const maxDur = Math.max(...steps.map((s) => s.duration_sec || 0), 0.001);
-  const timeline = $("#step-timeline");
-  timeline.innerHTML = steps
-    .map((step) => {
-      const dur = step.duration_sec;
-      const durLabel = dur != null ? fmtSec(dur) : "…";
-      const pct = dur != null ? Math.max(4, (dur / maxDur) * 100) : 0;
-      const detail = step.detail
-        ? Object.entries(step.detail)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(" · ")
-        : "";
-      const kindLabel = step.kind === "cerebras" ? "Cerebras" : "local";
-      return `
-        <li class="step-item ${step.status || ""}">
-          <span class="step-dot" aria-hidden="true"></span>
-          <div class="step-body">
-            <span class="step-label">${step.label}</span>
-            <span class="step-meta">${kindLabel}${detail ? ` · ${detail}` : ""}</span>
-            <div class="step-bar-wrap"><div class="step-bar" style="width:${pct}%"></div></div>
-          </div>
-          <span class="step-duration">${durLabel}</span>
-        </li>`;
-    })
-    .join("");
+  const hasRunning = metrics.steps.some((s) => s.status === "running");
+  const liveStep = LIVE_STEP_BY_STATUS[job.status];
+  if (!hasRunning && liveStep && !metrics.steps.some((s) => s.id === liveStep.id)) {
+    metrics.steps.push({
+      ...liveStep,
+      status: "running",
+      duration_sec: null,
+      detail: {},
+    });
+  }
 
-  const calls = metrics.api_calls || [];
+  const wall = wallElapsedSec(job.created_at);
+  if (wall != null) {
+    metrics.elapsed_sec = Math.max(metrics.elapsed_sec ?? 0, wall);
+    metrics.wall_elapsed_sec = wall;
+  }
+  return metrics;
+}
+
+function renderApiCallsTable(calls, { live = false } = {}) {
   const tbody = $("#api-table-body");
-  tbody.innerHTML = calls
-    .map(
-      (c) => `
+  if (!calls.length) {
+    tbody.innerHTML = "";
+    return;
+  }
+
+  let display = calls;
+  let note = "";
+  if (live && calls.length > LIVE_API_CALLS_CAP) {
+    display = calls.slice(-LIVE_API_CALLS_CAP);
+    note = `<tr class="api-table-note"><td colspan="7">Showing last ${LIVE_API_CALLS_CAP} of ${calls.length} calls — full table when done</td></tr>`;
+  }
+
+  tbody.innerHTML =
+    note +
+    display
+      .map(
+        (c) => `
       <tr>
         <td>${c.label || c.stage}</td>
-        <td>${fmtSec(c.wall_sec)}</td>
+        <td class="api-time--cerebras">${fmtSec(c.wall_sec)}</td>
+        <td>${fmtSec(c.queue_time_sec)}</td>
         <td>${fmtMs(c.ttft_ms)}</td>
         <td>${c.output_tokens_per_sec ?? "—"}</td>
         <td>${c.prompt_tokens ?? "—"}</td>
         <td>${c.completion_tokens ?? "—"}</td>
       </tr>`
-    )
-    .join("");
+      )
+      .join("");
+}
 
-  btnExportMetrics.disabled = !metrics.elapsed_sec;
+function renderPerformance(metrics, { live = false } = {}) {
+  if (!metrics) return;
+  lastMetrics = metrics;
+  perfPanel?.classList.add("active");
+
+  const cerebras = metrics.cerebras || {};
+  const elapsedLabel = fmtSec(metrics.elapsed_sec);
+  const llmLabel = fmtSec(metrics.cerebras_llm_sec ?? cerebras.wall_sec);
+  const tpsLabel =
+    cerebras.avg_output_tokens_per_sec != null
+      ? `${cerebras.avg_output_tokens_per_sec}`
+      : "—";
+
+  $("#m-elapsed").textContent = elapsedLabel;
+  $("#m-llm").textContent = llmLabel;
+  setStatValues(["ps-total", "ps-total-full"], elapsedLabel);
+  setStatValues(["ps-cerebras", "ps-cerebras-full"], llmLabel);
+  setStatValues(["m-tps", "m-tps-full"], tpsLabel);
+  updateHeroStats(metrics);
+
+  $("#ps-ingest").textContent = fmtSec(metrics.ingest_sec);
+  $("#ps-local").textContent = fmtSec(metrics.local_prep_sec);
+  $("#ps-queue").textContent = fmtSec(cerebras.queue_sec);
+  const pauseSec = metrics.rate_limit?.total_pause_sec;
+  $("#ps-pause").textContent = pauseSec != null ? fmtSec(pauseSec) : "—";
+  $("#ps-ttft").textContent = fmtMs(cerebras.avg_ttft_ms);
+  $("#ps-tokens").textContent =
+    cerebras.completion_tokens != null ? `${cerebras.completion_tokens}` : "—";
+  $("#ps-calls").textContent = cerebras.calls != null ? `${cerebras.calls}` : "—";
+
+  const key = metricsRenderKey(metrics);
+  if (key !== lastRenderedMetricsKey || live) {
+    lastRenderedMetricsKey = key;
+    renderGanttChart(metrics);
+  }
+
+  renderApiCallsTable(metrics.api_calls || [], { live });
+  refreshExportMenuState();
+}
+
+function setExportMenuOpen(open) {
+  if (!exportDropdown || !btnExportMenu) return;
+  exportDropdown.hidden = !open;
+  btnExportMenu.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function refreshExportMenuState() {
+  const hasDoc = !!lastMarkdown;
+  const hasMetrics = !!lastMetrics?.elapsed_sec;
+  if (btnDownloadMd) btnDownloadMd.disabled = !hasDoc;
+  if (btnDownloadHtml) btnDownloadHtml.disabled = !hasDoc;
+  if (btnDownloadPdf) btnDownloadPdf.disabled = !hasDoc;
+  if (btnExportMetrics) btnExportMetrics.disabled = !hasMetrics;
+  if (btnExportMenu) btnExportMenu.disabled = !hasDoc && !hasMetrics;
+  if (btnExportMenu?.disabled) setExportMenuOpen(false);
 }
 
 function setExportButtonsEnabled(enabled) {
   if (btnDownloadMd) btnDownloadMd.disabled = !enabled;
   if (btnDownloadHtml) btnDownloadHtml.disabled = !enabled;
   if (btnDownloadPdf) btnDownloadPdf.disabled = !enabled;
+  refreshExportMenuState();
 }
 
 function downloadExport(format) {
@@ -424,21 +1159,250 @@ function downloadExport(format) {
   a.remove();
 }
 
+function setReportView(view) {
+  const isPreview = view === "preview";
+  const isRaw = view === "raw";
+
+  outputEmpty.style.display = isPreview && !lastMarkdown ? "block" : "none";
+  docPreview.classList.toggle("visible", isPreview && !!lastMarkdown);
+  docRaw.classList.toggle("visible", isRaw && !!lastMarkdown);
+
+  btnPreview?.classList.toggle("active", isPreview);
+  btnRaw?.classList.toggle("active", isRaw);
+}
+
+function setChatEnabled(enabled) {
+  if (chatEmpty) chatEmpty.hidden = enabled;
+  if (chatPane) chatPane.hidden = !enabled;
+  if (chatInput) chatInput.disabled = !enabled || chatSending;
+  if (chatSend) chatSend.disabled = !enabled || chatSending;
+  chatSuggestions?.querySelectorAll(".chat-chip").forEach((chip) => {
+    chip.disabled = !enabled || chatSending;
+  });
+}
+
+function enrichmentCardHtml(enrichment, { withApply = false } = {}) {
+  if (!enrichment) return "";
+  const title = escapeHtml(enrichment.title || "New section");
+  const preview = escapeHtml((enrichment.markdown || "").slice(0, 600));
+  let applyBtn = "";
+  if (withApply) {
+    const id = `enr-${++enrichmentIdSeq}`;
+    enrichmentStore.set(id, {
+      title: enrichment.title || "New section",
+      markdown: enrichment.markdown || "",
+    });
+    applyBtn = `<button type="button" class="btn btn-secondary btn-sm chat-apply-btn" data-apply-id="${id}">Add to report</button>`;
+  }
+  return `
+    <div class="chat-enrichment">
+      <p class="chat-enrichment-title">Suggested section: ${title}</p>
+      <pre class="chat-enrichment-preview">${preview}</pre>
+      ${applyBtn}
+    </div>`;
+}
+
+function renderChatMessages(messages) {
+  if (!chatMessages) return;
+  if (!messages.length) {
+    chatMessages.innerHTML = '<li class="chat-status">Ask a question or request a new section for the report.</li>';
+    return;
+  }
+  chatMessages.innerHTML = messages
+    .map((msg) => {
+      const role = msg.role === "user" ? "user" : "assistant";
+      const enrichment =
+        msg.enrichment && role === "assistant"
+          ? enrichmentCardHtml(msg.enrichment, { withApply: true })
+          : "";
+      return `<li class="chat-msg chat-msg--${role}">${escapeHtml(msg.content || "")}${enrichment}</li>`;
+    })
+    .join("");
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+async function loadChatHistory(jobId = currentJobId) {
+  if (!jobId || !chatMessages) return;
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/chat`);
+    if (!res.ok) return;
+    const data = await res.json();
+    chatHasContext = !!data.has_context;
+    if (chatContextWarn) chatContextWarn.hidden = chatHasContext;
+    renderChatMessages(data.messages || []);
+    setChatEnabled(true);
+  } catch {
+    renderChatMessages([]);
+    setChatEnabled(!!lastMarkdown);
+  }
+}
+
+async function applyChatEnrichment(title, markdown) {
+  if (!currentJobId || !title || !markdown) return;
+  try {
+    const res = await fetch(`/api/jobs/${currentJobId}/chat/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, markdown }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || res.statusText);
+    }
+    await loadDocument(currentJobId);
+    setReportView("preview");
+    setProgress(100, "Section added to report.");
+  } catch (e) {
+    setProgress(0, e.message, true);
+  }
+}
+
+async function sendChatMessage(text) {
+  const message = text.trim();
+  if (!message || !currentJobId || chatSending) return;
+
+  chatSending = true;
+  setChatEnabled(true);
+
+  const prior = chatMessages.querySelectorAll(".chat-msg, .chat-status");
+  if (!prior.length) chatMessages.innerHTML = "";
+
+  const userLi = document.createElement("li");
+  userLi.className = "chat-msg chat-msg--user";
+  userLi.textContent = message;
+  chatMessages.appendChild(userLi);
+
+  const assistantLi = document.createElement("li");
+  assistantLi.className = "chat-msg chat-msg--assistant chat-msg--streaming";
+  assistantLi.textContent = "";
+  chatMessages.appendChild(assistantLi);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  if (chatInput) chatInput.value = "";
+
+  try {
+    const res = await fetch(`/api/jobs/${currentJobId}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || res.statusText);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let reply = "";
+    let enrichment = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data: ")) continue;
+        const data = JSON.parse(line.slice(6));
+        if (data.token) {
+          reply += data.token;
+          assistantLi.textContent = reply;
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        if (data.done) {
+          enrichment = data.enrichment || null;
+        }
+      }
+    }
+
+    assistantLi.classList.remove("chat-msg--streaming");
+    if (enrichment) {
+      assistantLi.insertAdjacentHTML(
+        "beforeend",
+        enrichmentCardHtml(enrichment, { withApply: true }),
+      );
+    }
+    await loadChatHistory(currentJobId);
+  } catch (e) {
+    assistantLi.textContent = e.message;
+    assistantLi.classList.add("chat-msg--error");
+  } finally {
+    chatSending = false;
+    setChatEnabled(!!lastMarkdown);
+  }
+}
+
+function stopPolling() {
+  pollGeneration += 1;
+  stopPlannedGanttTimer();
+  stopLiveClock();
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+}
+
+async function finalizeCompletedJob(job) {
+  stopPolling();
+  progressWrap.classList.add("visible");
+  progressWrap.classList.add("done");
+  setProgress(100, job.message || "Done — loading report…", false, job);
+  convertBtn.disabled = false;
+  renderPerformance(job.metrics || {}, { live: false });
+
+  try {
+    await loadDocument(currentJobId, { deferChat: true });
+    setProgress(100, "Document ready.", false, job);
+    persistActiveJob(null);
+    void loadHistory();
+    void loadChatHistory(currentJobId);
+  } catch (e) {
+    setProgress(
+      100,
+      `Done — refresh or open from history (${e.message})`,
+      false,
+      job,
+    );
+  }
+}
+
+function finalizeFailedJob(job, { clearPersist = true } = {}) {
+  stopPolling();
+  progressWrap.classList.remove("done");
+  showFailedJobReport(job);
+  setProgress(job.progress ?? 0, formatJobError(job.error), true, job);
+  convertBtn.disabled = false;
+  if (clearPersist) persistActiveJob(null);
+  focusReportPanel();
+}
+
 function resetOutput() {
+  stopPolling();
+  lastRenderedMetricsKey = "";
+  progressWrap.classList.remove("done");
   outputEmpty.style.display = "block";
   docPreview.classList.remove("visible");
   docRaw.classList.remove("visible");
-  metricsEl.classList.remove("visible");
-  perfPanel.classList.remove("active");
-  $("#step-timeline").innerHTML = "";
+  if (perfPanel) {
+    perfPanel.classList.remove("active");
+    perfPanel.open = false;
+  }
+  $("#gantt-chart").innerHTML = "";
   $("#api-table-body").innerHTML = "";
-  $("#hero-tps").textContent = "—";
-  $("#hero-llm").textContent = "—";
-  $("#hero-calls").textContent = "—";
-  setExportButtonsEnabled(false);
-  btnExportMetrics.disabled = true;
+  setStatValues(["hero-tps", "hero-llm", "hero-calls"], "—");
+  setStatValues(["ps-total", "ps-total-full", "ps-cerebras", "ps-cerebras-full", "m-tps", "m-tps-full"], "—");
+  if (headerLive) headerLive.hidden = true;
+  setExportMenuOpen(false);
+  refreshExportMenuState();
   lastMarkdown = "";
   lastMetrics = null;
+  if (chatMessages) chatMessages.innerHTML = "";
+  if (chatContextWarn) chatContextWarn.hidden = true;
+  setChatEnabled(false);
+  setReportView("preview");
 }
 
 async function probeSource(activePane) {
@@ -462,18 +1426,21 @@ async function probeSource(activePane) {
 
 async function startConvert() {
   const activePane = document.querySelector(".source-pane.active").id;
+  const sourceType = activePane === "pane-youtube" ? "youtube" : "file";
 
   convertBtn.disabled = true;
   resetOutput();
-  perfPanel.classList.add("active");
+  showBootstrapGantt("Analyzing video metadata…");
   setProgress(1, "Analyzing video metadata…");
 
   let probe;
   try {
     probe = await probeSource(activePane);
     applyProbeData(probe);
-    showVideoInfo(probe, activePane === "pane-youtube" ? "YouTube" : "File");
+    showVideoInfo(probe, sourceType === "youtube" ? "YouTube" : "File");
+    showPlannedGantt(probe, sourceType, "probe");
   } catch (e) {
+    stopPlannedGanttTimer();
     setProgress(0, e.message, true);
     convertBtn.disabled = false;
     return;
@@ -481,6 +1448,10 @@ async function startConvert() {
 
   const form = new FormData();
   form.append("language", $("#language").value);
+  const customPrompt = promptCustom?.value.trim();
+  if (customPrompt) {
+    form.append("custom_prompt", customPrompt);
+  }
 
   if (activePane === "pane-upload") {
     form.append("file", selectedFile);
@@ -489,6 +1460,7 @@ async function startConvert() {
   }
 
   setProgress(2, "Starting conversion…");
+  showPlannedGantt(probe, sourceType, "convert");
 
   try {
     const res = await fetch("/api/convert", { method: "POST", body: form });
@@ -498,40 +1470,64 @@ async function startConvert() {
     }
     const data = await res.json();
     currentJobId = data.job_id;
+    persistActiveJob(currentJobId);
+    stopPlannedGanttTimer();
     pollJob();
   } catch (e) {
+    stopPlannedGanttTimer();
     setProgress(0, e.message, true);
     convertBtn.disabled = false;
   }
 }
 
 function pollJob() {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
+  stopPolling();
+  const generation = pollGeneration;
+  let consecutiveErrors = 0;
+
+  const tick = async () => {
+    if (generation !== pollGeneration || !currentJobId) return;
+
     try {
       const res = await fetch(`/api/jobs/${currentJobId}`);
       if (!res.ok) throw new Error("Job not found");
       const job = await res.json();
-      setProgress(job.progress, job.message || job.status);
-      if (job.metrics) renderPerformance(job.metrics);
+      consecutiveErrors = 0;
+
+      setProgress(job.progress, job.message || job.status, false, job);
+      stopPlannedGanttTimer();
+      startLiveClock(job.created_at, job.status);
+      if (job.metrics) {
+        renderPerformance(enrichLiveMetrics(job) || job.metrics, { live: true });
+      }
 
       if (job.status === "completed") {
-        clearInterval(pollTimer);
-        renderPerformance(job.metrics || {});
-        await loadDocument();
-        await loadHistory();
-        convertBtn.disabled = false;
-      } else if (job.status === "failed") {
-        clearInterval(pollTimer);
-        setProgress(job.progress, job.error || "Pipeline failed", true);
-        convertBtn.disabled = false;
+        await finalizeCompletedJob(job);
+        return;
       }
+      if (job.status === "failed") {
+        finalizeFailedJob(job);
+        return;
+      }
+
+      pollTimer = setTimeout(tick, POLL_INTERVAL_MS);
     } catch (e) {
-      clearInterval(pollTimer);
-      setProgress(0, e.message, true);
-      convertBtn.disabled = false;
+      consecutiveErrors += 1;
+      if (consecutiveErrors >= POLL_MAX_ERRORS) {
+        stopPolling();
+        setProgress(
+          0,
+          `Connection lost — refresh to check status (${e.message})`,
+          true,
+        );
+        convertBtn.disabled = false;
+        return;
+      }
+      pollTimer = setTimeout(tick, POLL_ERROR_RETRY_MS);
     }
-  }, 800);
+  };
+
+  tick();
 }
 
 function rewriteAssetUrls(md, jobId) {
@@ -541,36 +1537,50 @@ function rewriteAssetUrls(md, jobId) {
   );
 }
 
-async function loadDocument(jobId = currentJobId) {
+function focusReportPanel() {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  document.querySelector(".panel--report")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function loadDocument(jobId = currentJobId, { deferChat = false } = {}) {
   const res = await fetch(`/api/jobs/${jobId}/document`);
   if (!res.ok) throw new Error("Could not load document");
   const data = await res.json();
   currentJobId = jobId;
   lastMarkdown = data.markdown;
-  const html = marked.parse(rewriteAssetUrls(lastMarkdown, jobId));
-  docPreview.innerHTML = html;
+  renderMarkdownPreview(lastMarkdown, jobId);
   docRaw.textContent = lastMarkdown;
-  outputEmpty.style.display = "none";
-  docPreview.classList.add("visible");
-  docRaw.classList.remove("visible");
-  btnPreview.classList.add("active");
-  btnRaw.classList.remove("active");
   setExportButtonsEnabled(true);
-  setProgress(100, "Document ready.");
+  setChatEnabled(true);
+  setReportView("preview");
+  focusReportPanel();
+  outputEmpty.style.display = "none";
+  if (!deferChat) {
+    await loadChatHistory(jobId);
+  }
 }
 
-btnPreview.addEventListener("click", () => {
-  docPreview.classList.add("visible");
-  docRaw.classList.remove("visible");
-  btnPreview.classList.add("active");
-  btnRaw.classList.remove("active");
+btnPreview?.addEventListener("click", () => setReportView("preview"));
+btnRaw?.addEventListener("click", () => setReportView("raw"));
+
+chatForm?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  sendChatMessage(chatInput?.value || "");
 });
 
-btnRaw.addEventListener("click", () => {
-  docPreview.classList.remove("visible");
-  docRaw.classList.add("visible");
-  btnRaw.classList.add("active");
-  btnPreview.classList.remove("active");
+chatSuggestions?.addEventListener("click", (e) => {
+  const chip = e.target.closest(".chat-chip");
+  if (!chip || chip.disabled) return;
+  const prompt = chip.dataset.prompt;
+  if (chatInput) chatInput.value = prompt;
+  sendChatMessage(prompt);
+});
+
+chatMessages?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".chat-apply-btn");
+  if (!btn) return;
+  const enr = enrichmentStore.get(btn.dataset.applyId);
+  if (enr) applyChatEnrichment(enr.title, enr.markdown);
 });
 
 btnDownloadMd?.addEventListener("click", () => {
@@ -578,7 +1588,7 @@ btnDownloadMd?.addEventListener("click", () => {
   const blob = new Blob([lastMarkdown], { type: "text/markdown" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `vid2doc-${currentJobId?.slice(0, 8) || "export"}.md`;
+  a.download = `sightline-${currentJobId?.slice(0, 8) || "export"}.md`;
   a.click();
   URL.revokeObjectURL(a.href);
 });
@@ -586,8 +1596,19 @@ btnDownloadMd?.addEventListener("click", () => {
 btnDownloadHtml?.addEventListener("click", () => downloadExport("html"));
 btnDownloadPdf?.addEventListener("click", () => downloadExport("pdf"));
 
-btnExportMetrics.addEventListener("click", () => {
+btnExportMenu?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (btnExportMenu.disabled) return;
+  setExportMenuOpen(exportDropdown?.hidden !== false);
+});
+
+exportDropdown?.addEventListener("click", (e) => e.stopPropagation());
+
+document.addEventListener("click", () => setExportMenuOpen(false));
+
+btnExportMetrics?.addEventListener("click", () => {
   if (!lastMetrics) return;
+  setExportMenuOpen(false);
   const payload = {
     job_id: currentJobId,
     exported_at: new Date().toISOString(),
@@ -600,9 +1621,13 @@ btnExportMetrics.addEventListener("click", () => {
   });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `vid2doc-metrics-${currentJobId?.slice(0, 8) || "export"}.json`;
+  a.download = `sightline-metrics-${currentJobId?.slice(0, 8) || "export"}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
+});
+
+[btnDownloadMd, btnDownloadHtml, btnDownloadPdf].forEach((btn) => {
+  btn?.addEventListener("click", () => setExportMenuOpen(false));
 });
 
 historyList?.addEventListener("click", (e) => {
@@ -626,5 +1651,19 @@ historyList?.addEventListener("keydown", (e) => {
 
 btnRefreshHistory?.addEventListener("click", loadHistory);
 
+async function loadDefaults() {
+  if (!promptDefault) return;
+  try {
+    const res = await fetch("/api/defaults");
+    if (!res.ok) return;
+    const data = await res.json();
+    promptDefault.value = data.compose_prompt || "";
+  } catch {
+    promptDefault.placeholder = "Could not load default prompt.";
+  }
+}
+
 convertBtn.addEventListener("click", startConvert);
+loadDefaults();
 loadHistory();
+resumeActiveJob();

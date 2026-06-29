@@ -174,16 +174,24 @@ def probe_youtube(url: str) -> VideoMetadata:
     )
 
 
-def download_youtube(url: str, dest: Path) -> Path:
-    """Download YouTube video with yt-dlp if available, else raise."""
+YOUTUBE_FORMAT_PROCESSING = (
+    "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
+    "bestvideo[height<=720]+bestaudio/"
+    "best[height<=720]/best"
+)
+
+YOUTUBE_FORMAT_HD = YOUTUBE_FORMAT_PROCESSING
+
+
+def _download_youtube_with_format(url: str, dest: Path, fmt: str) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     ytdlp = _ytdlp_path()
     output = str(dest.with_suffix(".%(ext)s") if dest.suffix else dest)
     last_error = "unknown error"
-    for fmt in ("mp4/best", "best[ext=mp4]/best", "best"):
+    for candidate in (fmt, "mp4/best", "best[ext=mp4]/best", "best"):
         try:
             subprocess.run(
-                [ytdlp, "--no-playlist", "-f", fmt, "-o", output, url],
+                [ytdlp, "--no-playlist", "-f", candidate, "-o", output, url],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -197,6 +205,21 @@ def download_youtube(url: str, dest: Path) -> Path:
         if candidates:
             return candidates[0]
     raise RuntimeError(f"YouTube download failed: {last_error}")
+
+
+def download_youtube_processing(url: str, dest: Path) -> Path:
+    """Fast 720p download for pipeline processing."""
+    return _download_youtube_with_format(url, dest, YOUTUBE_FORMAT_PROCESSING)
+
+
+def download_youtube_hd(url: str, dest: Path) -> Path:
+    """720p download for report screenshots (same cap as processing)."""
+    return _download_youtube_with_format(url, dest, YOUTUBE_FORMAT_HD)
+
+
+def download_youtube(url: str, dest: Path) -> Path:
+    """Download YouTube video with yt-dlp if available, else raise."""
+    return download_youtube_hd(url, dest)
 
 
 def download_http_video(url: str, dest: Path) -> Path:

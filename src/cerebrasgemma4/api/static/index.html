@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vid2Doc — Cerebras × Gemma 4</title>
+  <title>Sightline — Cerebras × Gemma 4</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/app.css">
   <script>
     (function () {
-      var stored = localStorage.getItem("vid2doc-theme");
+      var stored = localStorage.getItem("sightline-theme");
       var theme = stored || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
       document.documentElement.dataset.theme = theme;
     })();
@@ -22,9 +22,9 @@
 
   <div class="app">
     <header class="site-header">
-      <a class="logo" href="/" aria-label="Vid2Doc home">
+      <a class="logo" href="/" aria-label="Sightline home">
         <span class="logo-mark" aria-hidden="true"></span>
-        <span class="logo-text">Vid2Doc</span>
+        <span class="logo-text">Sightline</span>
       </a>
       <div class="header-live" id="header-live" hidden aria-label="Live pipeline stats">
         <span class="live-stat live-stat--accent">
@@ -47,7 +47,7 @@
       </nav>
     </header>
 
-    <p class="app-tagline">Turn any video into a structured document — key frames by Gemma 4, inference on Cerebras.</p>
+    <p class="app-tagline">Your sightline into any recording — Gemma 4 vision, Cerebras speed.</p>
 
     <main class="stage">
       <section class="panel panel--source source-bar" aria-labelledby="panel-source-title">
@@ -59,33 +59,11 @@
         </div>
         <div class="panel-body panel-body--source">
           <div class="source-bar-grid">
-            <div class="source-bar-main">
+            <div class="source-bar-row source-bar-row--head">
               <div class="seg-tabs tabs" role="tablist">
                 <button type="button" class="seg-tab tab active" data-pane="pane-youtube" role="tab">YouTube</button>
                 <button type="button" class="seg-tab tab" data-pane="pane-upload" role="tab">File</button>
               </div>
-
-              <div id="pane-youtube" class="source-pane active" role="tabpanel">
-                <div class="field">
-                  <label for="youtube-url">YouTube URL</label>
-                  <input type="url" id="youtube-url" placeholder="https://www.youtube.com/watch?v=…">
-                </div>
-              </div>
-
-              <div id="pane-upload" class="source-pane" role="tabpanel">
-                <label class="dropzone" id="dropzone">
-                  <input type="file" id="file-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
-                  <span class="dropzone-icon" aria-hidden="true">▶</span>
-                  <strong>Drop a video</strong>
-                  <span>MP4, WebM, MOV</span>
-                </label>
-                <p class="file-name" id="file-name"></p>
-              </div>
-
-              <p class="video-info" id="video-info" hidden></p>
-            </div>
-
-            <div class="source-bar-side">
               <details class="settings-details">
                 <summary>Report settings</summary>
                 <div class="settings-details-body">
@@ -110,21 +88,42 @@
                   </div>
                 </div>
               </details>
+            </div>
 
-              <div class="source-bar-actions">
-                <button type="button" class="btn btn-primary" id="convert-btn">Generate document</button>
-                <div class="progress-wrap" id="progress-wrap">
-                  <div class="progress-bar">
-                    <div class="progress-fill" id="progress-fill"></div>
-                  </div>
-                  <div class="progress-meta">
-                    <span id="status-msg">Waiting…</span>
-                    <span class="progress-right">
-                      <span id="progress-eta"></span>
-                      <span id="progress-pct">0%</span>
-                    </span>
+            <div class="source-bar-row source-bar-row--input">
+              <div class="source-bar-pane">
+                <div id="pane-youtube" class="source-pane active" role="tabpanel">
+                  <div class="field field--url">
+                    <label for="youtube-url">YouTube URL</label>
+                    <input type="url" id="youtube-url" placeholder="https://www.youtube.com/watch?v=…">
                   </div>
                 </div>
+
+                <div id="pane-upload" class="source-pane" role="tabpanel">
+                  <label class="dropzone" id="dropzone">
+                    <input type="file" id="file-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
+                    <span class="dropzone-icon" aria-hidden="true">▶</span>
+                    <strong>Drop a video</strong>
+                    <span>MP4, WebM, MOV</span>
+                  </label>
+                  <p class="file-name" id="file-name"></p>
+                </div>
+
+                <p class="video-info" id="video-info" hidden></p>
+              </div>
+              <button type="button" class="btn btn-primary btn-generate" id="convert-btn">Generate document</button>
+            </div>
+
+            <div class="progress-wrap" id="progress-wrap">
+              <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+              </div>
+              <div class="progress-meta">
+                <span id="status-msg">Waiting…</span>
+                <span class="progress-right">
+                  <span id="progress-eta"></span>
+                  <span id="progress-pct">0%</span>
+                </span>
               </div>
             </div>
           </div>
@@ -171,11 +170,11 @@
             </div>
             <div class="panel-head-actions output-toolbar">
               <div class="seg-tabs view-tabs" role="tablist" aria-label="Report view">
-                <button type="button" class="seg-tab btn btn-secondary active" id="btn-preview" role="tab">Preview</button>
-                <button type="button" class="seg-tab btn btn-secondary" id="btn-raw" role="tab">Markdown</button>
+                <button type="button" class="seg-tab active" id="btn-preview" role="tab">Preview</button>
+                <button type="button" class="seg-tab" id="btn-raw" role="tab">Markdown</button>
               </div>
               <div class="export-menu" id="export-menu">
-                <button type="button" class="btn btn-secondary export-trigger" id="btn-export-menu" aria-haspopup="true" aria-expanded="false" disabled>Export</button>
+                <button type="button" class="btn btn-secondary btn-toolbar export-trigger" id="btn-export-menu" aria-haspopup="true" aria-expanded="false" disabled>Export</button>
                 <div class="export-dropdown" id="export-dropdown" hidden>
                   <button type="button" class="export-option" id="btn-download-md" disabled>Download .md</button>
                   <button type="button" class="export-option" id="btn-download-html" disabled>Download .html</button>

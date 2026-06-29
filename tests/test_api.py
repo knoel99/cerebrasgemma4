@@ -11,7 +11,7 @@ def test_index():
     assert resp.status_code == 200
     assert "text/html" in resp.headers.get("content-type", "")
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    assert "Vid2Doc" in html
+    assert "Sightline" in html
     assert "Cerebras Inference" in html
 
 

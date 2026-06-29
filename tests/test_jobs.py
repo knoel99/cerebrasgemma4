@@ -1,3 +1,4 @@
+from cerebrasgemma4.api.routes.jobs import _estimate_remaining_sec, _job_to_status
 from cerebrasgemma4.pipeline.jobs import JobStatus, JobStore
 
 
@@ -49,3 +50,50 @@ def test_job_record_backward_compatible(tmp_path):
     assert loaded.status == JobStatus.COMPLETED
     assert loaded.title is None
     assert loaded.source_type is None
+
+
+def test_job_status_includes_language(tmp_path):
+    from cerebrasgemma4.api.routes.jobs import _job_to_status
+
+    store = JobStore(root=tmp_path)
+    record = store.create()
+    store.update(record.job_id, status=JobStatus.COMPLETED, language="fr")
+
+    status = _job_to_status(store.load(record.job_id))
+    assert status.language == "fr"
+
+
+def test_job_status_includes_custom_prompt(tmp_path):
+    from cerebrasgemma4.api.routes.jobs import _job_to_status
+
+    store = JobStore(root=tmp_path)
+    record = store.create()
+    store.update(
+        record.job_id,
+        status=JobStatus.COMPLETED,
+        custom_prompt="Summarize for executives only.",
+    )
+
+    status = _job_to_status(store.load(record.job_id))
+    assert status.custom_prompt == "Summarize for executives only."
+
+
+def test_job_status_includes_eta(tmp_path):
+    store = JobStore(root=tmp_path)
+    record = store.create()
+    store.update(
+        record.job_id,
+        status=JobStatus.ANALYZING,
+        progress=70,
+        message="Analyzing frames",
+        metrics={"estimated_total_minutes": 5.0},
+    )
+    loaded = store.load(record.job_id)
+
+    remaining = _estimate_remaining_sec(loaded)
+    assert remaining is not None
+    assert 0.0 <= remaining <= 5.0 * 60.0
+
+    status = _job_to_status(loaded)
+    assert status.estimated_total_minutes == 5.0
+    assert status.estimated_remaining_sec is not None
