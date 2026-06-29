@@ -8,7 +8,7 @@ from cerebrasgemma4.pipeline.ingest import VideoMetadata
 
 
 def test_probe_youtube_without_download(monkeypatch):
-    monkeypatch.setenv("SIGHTLINE_DEMO_MODE", "0")
+    monkeypatch.setenv("FASTYOUTUBEREPORT_DEMO_MODE", "0")
     meta = VideoMetadata(
         duration_sec=2745.0,
         width=1920,

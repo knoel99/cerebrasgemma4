@@ -5,7 +5,11 @@ import pytest
 
 from cerebrasgemma4.pipeline.frames import (
     REPORT_MIN_HEIGHT,
+    Frame,
+    _sparse_timestamps_by_frame_id,
     chunk_frames,
+    clear_frame_images,
+    ensure_frame_files,
     extract_frames,
     extract_frames_sparse,
     extract_report_frame,
@@ -72,6 +76,46 @@ def test_extract_frames_sparse(sample_video: Path, tmp_path: Path):
     frames = extract_frames_sparse(sample_video, tmp_path / "sparse", stamps, max_height=240)
     assert len(frames) == 4
     assert all(f.path.exists() for f in frames)
+
+
+def test_sparse_timestamps_dedupe_same_frame_id():
+    stamps = _sparse_timestamps_by_frame_id([4088.0, 4088.4, 4088.9, 4090.0])
+    assert stamps == [4088.0, 4090.0]
+
+
+def test_extract_frames_sparse_dedupes_colliding_frame_ids(sample_video: Path, tmp_path: Path):
+    frames = extract_frames_sparse(
+        sample_video,
+        tmp_path / "sparse",
+        [0.0, 0.2, 0.8, 1.0],
+        max_height=240,
+    )
+    assert len(frames) == 2
+    assert {f.frame_id for f in frames} == {"f_0000", "f_0001"}
+    assert all(f.path.exists() for f in frames)
+
+
+def test_ensure_frame_files_repairs_missing(sample_video: Path, tmp_path: Path):
+    out_dir = tmp_path / "frames"
+    frames = extract_frames_sparse(sample_video, out_dir, [1.0, 2.0], max_height=240)
+    missing = Frame(
+        frame_id=frames[0].frame_id,
+        timestamp_sec=frames[0].timestamp_sec,
+        path=out_dir / "missing.jpg",
+    )
+    frames[0].path.unlink()
+    repaired = ensure_frame_files([missing, frames[1]], sample_video, out_dir, max_height=240)
+    assert len(repaired) == 2
+    assert all(f.path.exists() for f in repaired)
+
+
+def test_clear_frame_images_removes_stale_jpegs(tmp_path: Path):
+    out_dir = tmp_path / "frames"
+    out_dir.mkdir()
+    stale = out_dir / "f_0001.jpg"
+    stale.write_bytes(b"stale")
+    clear_frame_images(out_dir)
+    assert not stale.exists()
 
 
 def test_extract_report_frame_at_least_720p(sample_video: Path, tmp_path: Path):

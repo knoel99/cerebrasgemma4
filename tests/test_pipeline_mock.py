@@ -77,7 +77,7 @@ def _mock_compose(_data):
 
 
 def test_pipeline_with_mocks(sample_video: Path, tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("SIGHTLINE_DEMO_MODE", "0")
+    monkeypatch.setenv("FASTYOUTUBEREPORT_DEMO_MODE", "0")
     store = JobStore(root=tmp_path / "jobs")
     record = store.create()
     job_id = record.job_id

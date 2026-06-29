@@ -1,6 +1,6 @@
-# Sightline
+# FastYoutubeReport
 
-**Your sightline into any recording** — hackathon project powered by Gemma 4 31B on [Cerebras Inference](https://inference-docs.cerebras.ai/models/gemma-4-31b).
+**Fast structured reports from YouTube** — hackathon project powered by Gemma 4 31B on [Cerebras Inference](https://inference-docs.cerebras.ai/models/gemma-4-31b).
 
 ## License
 

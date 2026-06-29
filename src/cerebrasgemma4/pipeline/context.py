@@ -8,9 +8,18 @@ from pathlib import Path
 from typing import Any
 
 from cerebrasgemma4.pipeline.gemma.analyze import FrameAnalysis
+from cerebrasgemma4.pipeline.gemma.series import DataObservation
 from cerebrasgemma4.pipeline.transcript import TranscriptResult
 
 CONTEXT_FILENAME = "context.json"
+
+
+def _load_observations_blob(data: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("observations", "data_observations", "telemetry_readings"):
+        blob = data.get(key)
+        if blob:
+            return list(blob)
+    return []
 
 
 @dataclass
@@ -21,6 +30,7 @@ class VideoContext:
     transcript_full_text: str
     transcript_segments: list[dict[str, Any]] = field(default_factory=list)
     analyses: list[dict[str, Any]] = field(default_factory=list)
+    observations: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -34,6 +44,7 @@ class VideoContext:
             transcript_full_text=data.get("transcript_full_text", ""),
             transcript_segments=list(data.get("transcript_segments") or []),
             analyses=list(data.get("analyses") or []),
+            observations=_load_observations_blob(data),
         )
 
     @classmethod
@@ -44,6 +55,7 @@ class VideoContext:
         duration_sec: float,
         transcript: TranscriptResult,
         analyses: list[FrameAnalysis],
+        observations: list[DataObservation] | None = None,
     ) -> VideoContext:
         return cls(
             source_name=source_name,
@@ -69,6 +81,7 @@ class VideoContext:
                 }
                 for a in analyses
             ],
+            observations=[o.to_dict() for o in (observations or [])],
         )
 
 

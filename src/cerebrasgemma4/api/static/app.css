@@ -272,7 +272,7 @@ body {
   color: var(--cb-orange-bright);
 }
 
-/* Main stage: source full width on top, then chat 30% + report 70% */
+/* Main stage: source full width on top, then chat 35% + report 65% */
 .stage {
   display: flex;
   flex-direction: column;
@@ -281,13 +281,16 @@ body {
 
 .stage-workspace {
   --workspace-height: min(72vh, 40rem);
+  --report-height: min(72vh, 40rem);
   --panel-head-h: 3.1rem;
   --control-h: 2.25rem;
   display: grid;
-  grid-template-columns: 30% minmax(0, 1fr);
+  grid-template-columns: 35% minmax(0, 1fr);
   gap: 1rem;
   align-items: stretch;
+  height: var(--workspace-height);
   min-height: var(--workspace-height);
+  max-height: var(--workspace-height);
 }
 
 .source-bar {
@@ -365,7 +368,9 @@ body {
 .panel--report {
   display: flex;
   flex-direction: column;
-  min-height: var(--workspace-height);
+  height: var(--workspace-height);
+  min-height: 0;
+  max-height: var(--workspace-height);
   overflow: hidden;
 }
 
@@ -389,15 +394,17 @@ body {
 .panel-body--report {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
 }
 
 .report-canvas {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
   background: var(--cb-ink);
   border: 1px solid var(--cb-border);
   border-radius: var(--radius);
@@ -446,18 +453,23 @@ body {
 @media (max-width: 900px) {
   .stage-workspace {
     --workspace-height: auto;
+    --report-height: min(58vh, 26rem);
     grid-template-columns: 1fr;
+    height: auto;
     min-height: 0;
+    max-height: none;
   }
 
   .panel--report {
     order: 1;
-    min-height: min(58vh, 26rem);
+    height: var(--report-height);
+    max-height: var(--report-height);
   }
 
   .panel--chat {
     order: 2;
-    min-height: min(42vh, 22rem);
+    height: min(42vh, 22rem);
+    max-height: min(42vh, 22rem);
   }
 }
 
@@ -1416,9 +1428,11 @@ body {
 
 .doc-preview {
   display: none;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 1.25rem 1.5rem;
   font-size: 0.92rem;
   line-height: 1.65;
@@ -1427,6 +1441,9 @@ body {
 
 .doc-preview.visible {
   display: block;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .doc-preview h1 {
@@ -1499,9 +1516,11 @@ body {
 
 .doc-raw {
   display: none;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   margin: 0;
   padding: 1rem;
   font-family: var(--font-mono);
@@ -1516,6 +1535,9 @@ body {
 
 .doc-raw.visible {
   display: block;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .sr-only {
@@ -1653,9 +1675,8 @@ body {
 
 .chat-compose {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   gap: 0.5rem;
-  align-items: end;
   margin-top: auto;
   padding-top: 0.65rem;
   border-top: 1px solid var(--cb-border);
@@ -1675,14 +1696,14 @@ body {
 }
 
 .chat-compose .btn-primary {
-  width: auto;
-  min-width: 4.5rem;
+  width: 100%;
+  min-width: 0;
   height: var(--control-h, 2.25rem);
   min-height: var(--control-h, 2.25rem);
   margin-top: 0;
   padding-top: 0;
   padding-bottom: 0;
-  align-self: end;
+  justify-self: stretch;
   white-space: nowrap;
 }
 

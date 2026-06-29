@@ -93,7 +93,11 @@ def normalize_api_call(
 
 
 def summarize_cerebras(calls: list[dict]) -> dict[str, Any]:
-    cerebras_calls = [c for c in calls if c.get("stage") in {"scout", "analyze", "compose"}]
+    cerebras_calls = [
+        c
+        for c in calls
+        if c.get("stage") in {"scout", "analyze", "compose", "series_collect"}
+    ]
     if not cerebras_calls:
         return {
             "calls": 0,

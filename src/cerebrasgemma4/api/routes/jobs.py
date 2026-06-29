@@ -161,7 +161,7 @@ def export_html(job_id: str):
     store = _get_store()
     record, doc_path, assets_dir = _require_completed_job(store, job_id)
     markdown_text = doc_path.read_text(encoding="utf-8")
-    title = record.title or "Sightline Report"
+    title = record.title or "FastYoutubeReport"
     html_doc = render_html_document(markdown_text, assets_dir=assets_dir, title=title)
     filename = export_filename(record.title, job_id, "html")
     return Response(
@@ -176,7 +176,7 @@ def export_pdf(job_id: str):
     store = _get_store()
     record, doc_path, assets_dir = _require_completed_job(store, job_id)
     markdown_text = doc_path.read_text(encoding="utf-8")
-    title = record.title or "Sightline Report"
+    title = record.title or "FastYoutubeReport"
     html_doc = render_html_document(markdown_text, assets_dir=assets_dir, title=title)
     try:
         pdf_bytes = render_pdf_bytes(html_doc)
@@ -218,7 +218,7 @@ def download_metrics_file(job_id: str):
     return FileResponse(
         path,
         media_type="application/json",
-        filename=f"sightline-metrics-{job_id[:8]}.json",
+        filename=f"fastyoutubereport-metrics-{job_id[:8]}.json",
     )
 
 

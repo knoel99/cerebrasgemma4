@@ -9,7 +9,7 @@ from cerebrasgemma4.pipeline.options import (
 
 @pytest.fixture(autouse=True)
 def _disable_demo_mode(monkeypatch):
-    monkeypatch.setenv("SIGHTLINE_DEMO_MODE", "0")
+    monkeypatch.setenv("FASTYOUTUBEREPORT_DEMO_MODE", "0")
 
 
 def test_suggest_for_120s_video():
@@ -50,7 +50,7 @@ def test_estimate_long_youtube_video_realistic():
 
 
 def test_demo_mode_targets_sub_minute(monkeypatch):
-    monkeypatch.setenv("SIGHTLINE_DEMO_MODE", "1")
+    monkeypatch.setenv("FASTYOUTUBEREPORT_DEMO_MODE", "1")
     s = suggest_convert_options(847, chapter_count=11, youtube=True)
     assert s.max_frames == 6
     assert s.estimated_total_minutes < 1.0

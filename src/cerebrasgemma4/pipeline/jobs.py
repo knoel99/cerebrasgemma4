@@ -54,7 +54,7 @@ class JobRecord:
 
 
 def default_jobs_root() -> Path:
-    return Path("/tmp/sightline")
+    return Path("/tmp/fastyoutubereport")
 
 
 class JobStore:

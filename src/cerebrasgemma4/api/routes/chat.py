@@ -20,6 +20,7 @@ from cerebrasgemma4.pipeline.chat_store import (
 )
 from cerebrasgemma4.pipeline.context import load_context
 from cerebrasgemma4.pipeline.gemma.chat import run_chat_turn
+from cerebrasgemma4.pipeline.charts_followup import try_charts_chat_turn
 from cerebrasgemma4.pipeline.jobs import JobStatus, JobStore
 
 router = APIRouter(prefix="/api/jobs", tags=["chat"])
@@ -77,13 +78,16 @@ def post_chat(job_id: str, body: ChatRequest):
     ctx = load_context(job_dir)
     history = load_chat_history(job_dir)
 
+    user_message = body.message.strip()
     try:
-        turn = run_chat_turn(
-            ctx=ctx,
-            document_md=document_md,
-            chat_history=history,
-            user_message=body.message.strip(),
-        )
+        turn = try_charts_chat_turn(job_dir, user_message, ctx)
+        if turn is None:
+            turn = run_chat_turn(
+                ctx=ctx,
+                document_md=document_md,
+                chat_history=history,
+                user_message=user_message,
+            )
     except Exception as exc:
         raise HTTPException(502, f"Chat failed: {exc}") from exc
 

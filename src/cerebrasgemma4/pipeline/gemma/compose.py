@@ -45,6 +45,7 @@ class ComposeInput:
     transcript: TranscriptResult
     analyses: list[FrameAnalysis]
     custom_prompt: str | None = None
+    charts_section: str | None = None
 
 
 def _format_timestamp(sec: float) -> str:
@@ -69,6 +70,15 @@ def build_compose_prompt(data: ComposeInput) -> str:
     custom = (data.custom_prompt or "").strip()
     if custom:
         parts.append(f"\n\n## Additional instructions from the user\n{custom}")
+    section = (data.charts_section or "").strip()
+    if section:
+        parts.append(
+            "\n\n## Observations and charts (include in report)\n"
+            "Add a ## Data & charts (or localized equivalent) section with the table "
+            "and chart images below. Cite whether values came from frames "
+            "and/or transcript.\n\n"
+            f"{section}"
+        )
     parts.extend(
         [
             f"\n\nSource: {data.source_name}",

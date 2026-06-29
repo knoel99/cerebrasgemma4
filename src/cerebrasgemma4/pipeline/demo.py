@@ -16,5 +16,8 @@ DEMO_REPORT_BATCH_WORKERS = 6
 
 
 def is_demo_mode() -> bool:
-    raw = os.getenv("SIGHTLINE_DEMO_MODE", os.getenv("VID2DOC_DEMO_MODE", "1"))
+    raw = os.getenv(
+        "FASTYOUTUBEREPORT_DEMO_MODE",
+        os.getenv("SIGHTLINE_DEMO_MODE", os.getenv("VID2DOC_DEMO_MODE", "1")),
+    )
     return raw.strip().lower() in {"1", "true", "yes", "on"}

@@ -13,28 +13,16 @@ Liens à renseigner avant envoi :
 
 ---
 
-## Nom d'application — recommandation
-
-### Problème avec *Vid2Doc*
-
-- Sonne **utilitaire** (convertisseur) plutôt que produit.
-- Le « 2 » fait daté ; ne dit rien sur la **vitesse**, le **multimodal** ni le **chat**.
-- Difficile à mémoriser sur X et en jugement « People's Choice ».
-
-### Nom recommandé : **Sightline**
+## Nom d'application — **FastYoutubeReport**
 
 | Critère | Pourquoi ça marche |
 |---------|-------------------|
-| **Sens** | *Sight* (vision multimodale) + *line* (fil narratif, timestamps, chapitres) |
-| **Positionnement** | Pro, crédible pour Enterprise Impact |
-| **Mémorabilité** | Un mot, distinctif, facile à hashtag `#Sightline` |
-| **Tagline** | *Your sightline into any recording.* |
+| **Clarté** | Dit exactement ce que fait l'app : rapport YouTube, vite |
+| **Hackathon** | Met la **vitesse Cerebras** au centre (critère de jugement #1) |
+| **People's Choice** | Nom mémorable, explicite, facile à retweeter |
+| **Tagline** | *Fast structured reports from YouTube — Gemma 4 vision, Cerebras speed.* |
 
-**Variante orientée vitesse (X / People's Choice)** : **FlashBrief** — *flash inference → structured brief*. Plus punchy pour la démo tok/s, moins « enterprise ».
-
-**À éviter pour la soumission** : *Keyframe* (collision avec l’édition vidéo), *VidScribe* / *VideoBrief* (génériques, noyés dans le bruit).
-
-> **Statut** : l’app et le code utilisent désormais **Sightline** (UI, exports, API). Le repo GitHub reste `cerebrasgemma4`.
+> **Statut** : l'app, l'UI, les exports et l'API utilisent **FastYoutubeReport**. Le repo GitHub reste `cerebrasgemma4`.
 
 ---
 
@@ -51,7 +39,7 @@ Liens à renseigner avant envoi :
 
 | Temps | Contenu |
 |-------|---------|
-| 0–5 s | Hook : URL YouTube → rapport structuré en streaming |
+| 0–5 s | Hook : coller une URL YouTube → rapport structuré en streaming |
 | 5–25 s | Pipeline live : Scout → Analyze → Compose + **tok/s** dans le header |
 | 25–40 s | Chat « Ask your video » + enrichissement du rapport |
 | 40–55 s | Métriques (wall clock vs inference Cerebras) ; comparaison GPU si possible |
@@ -62,29 +50,29 @@ Liens à renseigner avant envoi :
 ## Track 1 — `#g4hackathon-multiverse-agents`
 
 ```
-🎬 **Sightline** — Your sightline into any recording, powered by Gemma 4 31B on Cerebras Inference
+🎬 **FastYoutubeReport** — Fast structured reports from YouTube, powered by Gemma 4 31B on Cerebras Inference
 
 **Demo video:** VIDEO_URL
 
 **What it does**
-Paste a YouTube URL or drop an MP4 → get a Markdown report with executive summary, timestamped sections, embedded key-frame screenshots, and key takeaways. Then chat with the video to Q&A or enrich the report live.
+Paste a YouTube URL (or drop an MP4) → get a Markdown report with executive summary, timestamped sections, embedded key-frame screenshots, and key takeaways. Then chat with the video to Q&A or enrich the report live.
 
 **Why it's multi-agent + multimodal**
-Sightline runs a coordinated Gemma 4 pipeline — each stage is a specialized agent:
+FastYoutubeReport runs a coordinated Gemma 4 pipeline — each stage is a specialized agent:
 
 1. **Scout** — hierarchical multimodal scoring (frame mosaics + structured JSON) to find the most document-worthy moments across long videos
 2. **Analyst** — deep per-frame vision analysis (on-screen text, UI, diagrams)
-3. **Composer** — streams the final Markdown document token-by-token
+3. **Composer** — streams the final Markdown document token-by-token (photo-editor style layout)
 4. **Chat agent** — grounded Q&A on transcript + frame analyses, with structured enrichments appended to the report
 
 **Multimodal stack**
-- Video → sparse frame extraction (YouTube chapters aware)
+- YouTube ingest + sparse frame extraction (chapters aware)
 - Images sent as base64 data URIs to Gemma 4 via Cerebras Chat Completions
 - Structured outputs (`strict: true`) for scout scores and chat responses
 - Full transcript fusion for context
 
 **Speed in action**
-Cerebras inference is the UX — streaming compose, live tok/s in the header, per-call `time_info` breakdown (TTFT, tokens/s). On a 30+ min video, the full pipeline completes in under 60 seconds in demo mode — impossible without Cerebras-class throughput across 10+ multimodal calls.
+Cerebras inference is the UX — streaming compose, live tok/s in the header, per-call `time_info` breakdown (TTFT, tokens/s). On a 30+ min YouTube video, the full pipeline completes in under 60 seconds in demo mode — impossible without Cerebras-class throughput across 10+ multimodal calls.
 
 **Stack**
 Python · FastAPI · `cerebras-cloud-sdk` · `gemma-4-31b`
@@ -98,14 +86,14 @@ Python · FastAPI · `cerebras-cloud-sdk` · `gemma-4-31b`
 ## Track 2 — `#g4hackathon-people-choice`
 
 ```
-🏆 **Sightline** — People's Choice submission
+🏆 **FastYoutubeReport** — People's Choice submission
 
 **Demo video:** VIDEO_URL
 
-Stop scrubbing through hour-long recordings. Sightline turns any video into a polished, shareable document in seconds — powered by **Gemma 4 31B** on **Cerebras Inference**.
+Stop scrubbing through hour-long YouTube recordings. **FastYoutubeReport** turns any video into a polished, shareable document in seconds — powered by **Gemma 4 31B** on **Cerebras Inference**.
 
 **The wow moment**
-Watch the report stream in real time while the header shows live **tokens/sec**. A 45-minute tech talk → structured doc with screenshots, timestamps, and takeaways. Then ask "What was on screen at 12:30?" and get a grounded answer instantly.
+Paste a YouTube URL, watch the report stream in real time while the header shows live **tokens/sec**. A 45-minute tech talk → structured doc with screenshots, timestamps, and takeaways. Then ask "What was on screen at 12:30?" and get a grounded answer instantly.
 
 **Built for the hackathon**
 - Multi-agent pipeline (Scout → Analyze → Compose → Chat)
@@ -124,15 +112,15 @@ Watch the report stream in real time while the header shows live **tokens/sec**.
 ## Track 3 — `#g4hackathon-enterprise-impact`
 
 ```
-🏢 **Sightline** — Enterprise Impact submission
+🏢 **FastYoutubeReport** — Enterprise Impact submission
 
 **Demo video:** VIDEO_URL
 
 **The enterprise problem**
-Teams lose institutional knowledge buried in webinars, training recordings, incident post-mortems, and customer calls. Manual documentation is slow, inconsistent, and doesn't scale.
+Teams lose institutional knowledge buried in webinars, training recordings, incident post-mortems, and customer calls on YouTube and internal video libraries. Manual documentation is slow, inconsistent, and doesn't scale.
 
 **The solution**
-Sightline automatically converts video into searchable, structured knowledge documents — with timestamped sections, embedded screenshots of slides/diagrams/UI, and an executive summary. Employees can then chat with the video context to extract decisions, FAQs, or compliance-relevant details.
+FastYoutubeReport automatically converts video into searchable, structured knowledge documents — with timestamped sections, embedded screenshots of slides/diagrams/UI, and an executive summary. Employees can then chat with the video context to extract decisions, FAQs, or compliance-relevant details.
 
 **Enterprise use cases**
 - **Knowledge management** — onboarding docs from internal training videos
@@ -163,30 +151,29 @@ Cerebras speed makes multi-call multimodal pipelines viable in production: 10+ G
 ### Post principal (~280 caractères)
 
 ```
-Built Sightline for the @Cerebras × @googlegemma hackathon 🚀
+Built FastYoutubeReport for the @Cerebras × @googlegemma hackathon 🚀
 
-Any video → structured Markdown doc in seconds with Gemma 4 31B
+Paste a YouTube URL → structured Markdown report in seconds with Gemma 4 31B
 
-Multi-agent: Scout → Analyze → Compose → Chat
-Live tok/s · multimodal frame scoring · export PDF
+Scout → Analyze → Compose → Chat · live tok/s · export PDF
 
 45-min talk → full report in <60s
 
 Demo 👇
 VIDEO_URL
 
-#Gemma4 #Cerebras #AI #Multimodal
+#Gemma4 #Cerebras #YouTube #AI
 ```
 
 ### Thread optionnel (plus de reach)
 
 **Tweet 1**
 ```
-We turned Gemma 4 31B on @Cerebras into a video-to-document factory 🎬→📄
+FastYoutubeReport 🎬→📄
 
-Sightline: paste a YouTube URL, get a structured report with screenshots + timestamps — then chat with your video.
+Paste a YouTube URL, get a structured report with screenshots + timestamps — then chat with your video.
 
-Built in 24h for the @googlegemma hackathon. Demo below 👇
+Built with Gemma 4 31B on @Cerebras for the @googlegemma hackathon. Demo below 👇
 ```
 
 **Tweet 2**
@@ -203,13 +190,13 @@ All on gemma-4-31b via Cerebras Inference.
 
 **Tweet 3**
 ```
-Speed IS the feature.
+Speed IS the product name.
 
 Header shows live tokens/sec. Pipeline metrics expose TTFT per call.
 
-On a 30+ min video: full scout → analyze → compose in under 60 seconds.
+On a 30+ min YouTube video: full scout → analyze → compose in under 60 seconds.
 
-Without Cerebras throughput, this UX doesn't exist.
+Without Cerebras throughput, FastYoutubeReport doesn't exist.
 
 VIDEO_URL
 ```
@@ -222,19 +209,8 @@ Export .md / .html / .pdf. Custom prompts. Rate-limited for production.
 
 Repo: REPO_URL
 
-If this is useful, a repost helps us for People's Choice 🙏
+Repost helps us for People's Choice 🙏
 @Cerebras @googlegemma
-```
-
-### Variante courte « FlashBrief » (si tu veux pousser la vitesse sur X)
-
-```
-FlashBrief ⚡ — 45 min of video → full structured doc in <60s
-
-Gemma 4 31B on @Cerebras: Scout, Analyze, Compose, Chat — all streaming, live tok/s on screen.
-
-@googlegemma hackathon entry 👇
-VIDEO_URL
 ```
 
 ---

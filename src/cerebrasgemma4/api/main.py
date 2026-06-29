@@ -12,8 +12,8 @@ from cerebrasgemma4.api.routes import chat, convert, jobs
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(
-    title="Sightline",
-    description="Sightline — video to structured documents with Gemma 4 31B on Cerebras",
+    title="FastYoutubeReport",
+    description="FastYoutubeReport — fast YouTube video reports with Gemma 4 31B on Cerebras",
     version="0.1.0",
 )
 

@@ -473,6 +473,10 @@ def scout_global_batch(
     transcript_excerpt: str,
 ) -> tuple[list[RegionScore], dict]:
     """Score coarse video regions from one representative frame each."""
+    batch = [(region, frame) for region, frame in batch if frame.path.is_file()]
+    if not batch:
+        return [], {"usage": {}, "time_info": {}}
+
     region_list = "\n".join(
         f"- {region.region_id}: {region.label} ({region.start_sec:.1f}s–{region.end_sec:.1f}s)"
         for region, _frame in batch
@@ -547,6 +551,7 @@ def scout_mosaic(
     time_range: str,
 ) -> tuple[list[FrameScore], dict]:
     """Score frames from a single labeled mosaic (one Cerebras image)."""
+    frames = [frame for frame in frames if frame.path.is_file()]
     if not frames:
         return [], {"usage": {}, "time_info": {}}
 

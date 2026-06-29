@@ -13,13 +13,18 @@ from cerebrasgemma4.pipeline.demo import (
     DEMO_SCOUT_MAX_HEIGHT,
     is_demo_mode,
 )
+from cerebrasgemma4.pipeline.charts import format_section, render_charts
 from cerebrasgemma4.pipeline.frames import (
+    SCOUT_MAX_HEIGHT,
     chunk_frames,
+    clear_frame_images,
+    ensure_frame_files,
     extract_frames,
     extract_frames_sparse,
     extract_report_frames_batch,
     plan_demo_timestamps,
 )
+from cerebrasgemma4.pipeline.gemma.series import collect_observations, prompt_requests_charts
 from cerebrasgemma4.pipeline.gemma.analyze import analyze_frame
 from cerebrasgemma4.pipeline.gemma.compose import ComposeInput, compose_complete
 from cerebrasgemma4.pipeline.chapters import VideoChapter
@@ -139,6 +144,7 @@ def run_pipeline(
     with perf.step("extract_frames", extract_label, kind="local") as step:
         _push_metrics(store, job_id, perf, limiter=limiter)
         frames_dir = job_dir / "frames"
+        clear_frame_images(frames_dir)
 
         def _extract_progress(done: int, total: int) -> None:
             step["detail"] = {"sparse": True, "extracted": done, "planned": total}
@@ -173,6 +179,13 @@ def run_pipeline(
                 max_duration_sec=options.max_duration_sec,
             )
             step["detail"] = {"frame_count": len(frames)}
+        scout_height = DEMO_SCOUT_MAX_HEIGHT if is_demo_mode() else SCOUT_MAX_HEIGHT
+        frames = ensure_frame_files(
+            frames,
+            video_path,
+            frames_dir,
+            max_height=scout_height,
+        )
         chunks = chunk_frames(frames, chunk_size=5)
         frame_paths = {f.frame_id: f.path for f in frames}
         step["detail"]["chunk_count"] = len(chunks)
@@ -263,6 +276,44 @@ def run_pipeline(
 
     all_scores = apply_duplicate_penalties(all_scores, frame_paths)
     selected = select_top_frames(all_scores, frame_paths, max_frames=options.max_frames)
+
+    observations = []
+    charts_section: str | None = None
+    if prompt_requests_charts(options.custom_prompt):
+        store.update(
+            job_id,
+            progress=68,
+            message="Collecting observations (frames + transcript)",
+        )
+        with perf.step(
+            "series_collect",
+            "Series collection (Gemma 4 · Cerebras)",
+            kind="cerebras",
+        ) as series_step:
+            _push_metrics(store, job_id, perf, limiter=limiter)
+
+            def after_series_call(record: dict) -> None:
+                limiter.record(record.get("usage"))
+                perf.record_api_call(normalize_api_call(**record))
+                series_step["detail"]["completed_calls"] = (
+                    series_step["detail"].get("completed_calls", 0) + 1
+                )
+                _push_metrics(store, job_id, perf, limiter=limiter)
+
+            observations = collect_observations(
+                frames=frames,
+                transcript_segments=transcript.segments,
+                custom_prompt=options.custom_prompt or "",
+                before_call=lambda: _wait_rate_limit(limiter, store, job_id),
+                after_call=after_series_call,
+            )
+            charts = render_charts(observations, assets_dir)
+            charts_section = format_section(observations, charts)
+            series_step["detail"] = {
+                "observations": len(observations),
+                "charts": [c.asset_name for c in charts],
+            }
+        _push_metrics(store, job_id, perf, limiter=limiter)
     preview_asset: str | None = None
     asset_jobs: list[tuple[float, Path]] = []
     if selected:
@@ -334,6 +385,7 @@ def run_pipeline(
             transcript=transcript,
             analyses=analyses,
             custom_prompt=options.custom_prompt,
+            charts_section=charts_section,
         )
         _wait_rate_limit(limiter, store, job_id, token_estimate=16_000)
         call_t0 = time.perf_counter()
@@ -364,6 +416,7 @@ def run_pipeline(
             duration_sec=meta.duration_sec,
             transcript=transcript,
             analyses=analyses,
+            observations=observations,
         ),
     )
 

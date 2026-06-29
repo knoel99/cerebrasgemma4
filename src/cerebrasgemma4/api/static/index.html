@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sightline — Cerebras × Gemma 4</title>
+  <title>FastYoutubeReport — Cerebras × Gemma 4</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/app.css">
   <script>
     (function () {
-      var stored = localStorage.getItem("sightline-theme");
+      var stored = localStorage.getItem("fastyoutubereport-theme");
       var theme = stored || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
       document.documentElement.dataset.theme = theme;
     })();
@@ -22,9 +22,9 @@
 
   <div class="app">
     <header class="site-header">
-      <a class="logo" href="/" aria-label="Sightline home">
+      <a class="logo" href="/" aria-label="FastYoutubeReport home">
         <span class="logo-mark" aria-hidden="true"></span>
-        <span class="logo-text">Sightline</span>
+        <span class="logo-text">FastYoutubeReport</span>
       </a>
       <div class="header-live" id="header-live" hidden aria-label="Live pipeline stats">
         <span class="live-stat live-stat--accent">
@@ -47,7 +47,7 @@
       </nav>
     </header>
 
-    <p class="app-tagline">Your sightline into any recording — Gemma 4 vision, Cerebras speed.</p>
+    <p class="app-tagline">Fast structured reports from YouTube — Gemma 4 vision, Cerebras speed.</p>
 
     <main class="stage">
       <section class="panel panel--source source-bar" aria-labelledby="panel-source-title">
@@ -106,7 +106,7 @@
                   </div>
                   <div class="field field--last">
                     <label for="prompt-custom">Custom instructions <span class="label-optional">(optional)</span></label>
-                    <textarea id="prompt-custom" class="prompt-field" rows="2" maxlength="4000" placeholder="e.g. Focus on pricing decisions…"></textarea>
+                    <textarea id="prompt-custom" class="prompt-field" rows="2" maxlength="4000" placeholder="e.g. Extraire les métriques visibles ou citées et générer des graphiques…"></textarea>
                   </div>
                 </div>
               </details>

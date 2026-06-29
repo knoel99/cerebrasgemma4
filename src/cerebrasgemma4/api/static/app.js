@@ -4,7 +4,7 @@ const themeToggle = $("#theme-toggle");
 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  localStorage.setItem("sightline-theme", theme);
+  localStorage.setItem("fastyoutubereport-theme", theme);
   if (!themeToggle) return;
   const isLight = theme === "light";
   themeToggle.textContent = isLight ? "☾" : "☀";
@@ -37,7 +37,7 @@ const progressEta = $("#progress-eta");
 const statusMsg = $("#status-msg");
 const perfPanel = $("#perf-panel");
 const historyBlock = $("#history-block");
-const HISTORY_PANEL_KEY = "sightline-history-open";
+const HISTORY_PANEL_KEY = "fastyoutubereport-history-open";
 const headerLive = $("#header-live");
 const outputEmpty = $("#output-empty");
 const docPreview = $("#doc-preview");
@@ -83,7 +83,7 @@ const enrichmentStore = new Map();
 let enrichmentIdSeq = 0;
 
 const HACKATHON_RPM = 100;
-const ACTIVE_JOB_KEY = "sightline-active-job";
+const ACTIVE_JOB_KEY = "fastyoutubereport-active-job";
 const POLL_INTERVAL_MS = 800;
 const POLL_ERROR_RETRY_MS = 1500;
 const POLL_MAX_ERRORS = 8;
@@ -395,7 +395,7 @@ function renderMarkdownPreview(markdown, jobId) {
 }
 
 function configureMarked() {
-  if (typeof marked === "undefined" || marked.__sightlineFigures) return;
+  if (typeof marked === "undefined" || marked.__fastYoutubeReportFigures) return;
   marked.use({
     renderer: {
       image({ href, title, text }) {
@@ -408,7 +408,7 @@ function configureMarked() {
       },
     },
   });
-  marked.__sightlineFigures = true;
+  marked.__fastYoutubeReportFigures = true;
 }
 
 configureMarked();
@@ -1590,7 +1590,7 @@ btnDownloadMd?.addEventListener("click", () => {
   const blob = new Blob([lastMarkdown], { type: "text/markdown" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `sightline-${currentJobId?.slice(0, 8) || "export"}.md`;
+  a.download = `fastyoutubereport-${currentJobId?.slice(0, 8) || "export"}.md`;
   a.click();
   URL.revokeObjectURL(a.href);
 });
@@ -1623,7 +1623,7 @@ btnExportMetrics?.addEventListener("click", () => {
   });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `sightline-metrics-${currentJobId?.slice(0, 8) || "export"}.json`;
+  a.download = `fastyoutubereport-metrics-${currentJobId?.slice(0, 8) || "export"}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 });

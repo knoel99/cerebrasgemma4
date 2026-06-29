@@ -75,6 +75,79 @@ def _frame_id(timestamp_sec: float) -> str:
     return f"f_{int(timestamp_sec):04d}"
 
 
+def _timestamp_from_frame_path(path: Path) -> tuple[str, float]:
+    stem = path.stem
+    if stem.startswith("f_"):
+        frame_id = stem
+        return frame_id, float(stem.split("_", 1)[1])
+    if stem.startswith("frame_"):
+        index = int(stem.split("_", 1)[1])
+        ts = float(index - 1)
+        return _frame_id(ts), ts
+    raise ValueError(f"unsupported frame filename: {path.name}")
+
+
+def load_scout_frames_from_dir(frames_dir: Path) -> list[Frame]:
+    """Reload scout JPEGs persisted under a job directory."""
+    if not frames_dir.is_dir():
+        return []
+    frames: list[Frame] = []
+    for path in sorted(frames_dir.glob("*.jpg")):
+        try:
+            frame_id, timestamp_sec = _timestamp_from_frame_path(path)
+        except ValueError:
+            continue
+        frames.append(
+            Frame(frame_id=frame_id, timestamp_sec=timestamp_sec, path=path)
+        )
+    return sorted(frames, key=lambda f: f.timestamp_sec)
+
+
+def _sparse_timestamps_by_frame_id(timestamps: list[float]) -> list[float]:
+    """Keep one seek per scout JPEG (f_XXXX.jpg) to avoid parallel overwrites."""
+    chosen: dict[str, float] = {}
+    for ts in timestamps:
+        rounded = round(ts, 2)
+        frame_id = _frame_id(rounded)
+        if frame_id not in chosen:
+            chosen[frame_id] = rounded
+    return sorted(chosen.values())
+
+
+def clear_frame_images(output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for path in output_dir.glob("*.jpg"):
+        path.unlink(missing_ok=True)
+
+
+def ensure_frame_files(
+    frames: list[Frame],
+    video_path: Path,
+    output_dir: Path,
+    *,
+    max_height: int = SCOUT_MAX_HEIGHT,
+) -> list[Frame]:
+    """Drop duplicate frame_ids and re-extract any missing JPEGs before scout."""
+    kept: list[Frame] = []
+    seen: set[str] = set()
+    for frame in sorted(frames, key=lambda f: f.timestamp_sec):
+        if frame.frame_id in seen:
+            continue
+        seen.add(frame.frame_id)
+        if frame.path.is_file():
+            kept.append(frame)
+            continue
+        kept.append(
+            _extract_single_scout_frame(
+                video_path,
+                output_dir,
+                frame.timestamp_sec,
+                max_height=max_height,
+            )
+        )
+    return kept
+
+
 def plan_demo_timestamps(
     duration_sec: float,
     chapters: list | None,
@@ -143,7 +216,7 @@ def extract_frames_sparse(
     """Extract scout frames via parallel seek (fast on long videos)."""
     if not timestamps:
         raise ValueError("sparse extraction requires timestamps")
-    unique = sorted({round(t, 2) for t in timestamps})
+    unique = _sparse_timestamps_by_frame_id(timestamps)
     frames: list[Frame] = []
     workers = min(max_workers, max(1, len(unique)))
     with ThreadPoolExecutor(max_workers=workers) as pool:
