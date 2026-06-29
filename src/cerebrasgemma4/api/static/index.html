@@ -26,6 +26,20 @@
         <span class="logo-mark" aria-hidden="true"></span>
         <span class="logo-text">Vid2Doc</span>
       </a>
+      <div class="header-live" id="header-live" hidden aria-label="Live pipeline stats">
+        <span class="live-stat live-stat--accent">
+          <strong id="hero-tps">—</strong>
+          <span>tok/s</span>
+        </span>
+        <span class="live-stat">
+          <strong id="hero-llm">—</strong>
+          <span>inference</span>
+        </span>
+        <span class="live-stat">
+          <strong id="hero-calls">—</strong>
+          <span>calls</span>
+        </span>
+      </div>
       <nav class="header-meta" aria-label="Product metadata">
         <button type="button" class="chip-tag theme-toggle" id="theme-toggle" aria-label="Toggle theme">☀</button>
         <span class="chip-tag">gemma-4-31b</span>
@@ -33,200 +47,278 @@
       </nav>
     </header>
 
-    <section class="hero">
-      <p class="hero-eyebrow">Multimodal · Hackathon</p>
-      <h1 class="hero-title">The fastest inference is now your video pipeline.</h1>
-      <p class="hero-sub">
-        Turn any video into a structured document — key frames selected by Gemma 4,
-        blazing-fast inference on Cerebras.
-      </p>
-      <div class="hero-stats">
-        <div class="hero-stat">
-          <strong id="hero-tps">—</strong>
-          <span>tokens/s (avg.)</span>
-        </div>
-        <div class="hero-stat hero-stat--accent">
-          <strong id="hero-llm">—</strong>
-          <span>Cerebras inference</span>
-        </div>
-        <div class="hero-stat">
-          <strong id="hero-calls">—</strong>
-          <span>API calls</span>
-        </div>
-      </div>
-    </section>
+    <p class="app-tagline">Turn any video into a structured document — key frames by Gemma 4, inference on Cerebras.</p>
 
-    <div class="layout">
-      <section class="panel" aria-labelledby="panel-source-title">
+    <main class="stage">
+      <section class="panel panel--source source-bar" aria-labelledby="panel-source-title">
         <div class="panel-head">
-          <span id="panel-source-title" class="panel-label">01 — Source</span>
-        </div>
-        <div class="panel-body">
-          <div class="tabs" role="tablist">
-            <button type="button" class="tab active" data-pane="pane-youtube" role="tab">YouTube</button>
-            <button type="button" class="tab" data-pane="pane-upload" role="tab">File</button>
+          <div class="panel-head-label">
+            <span class="section-eyebrow">Input</span>
+            <h2 id="panel-source-title" class="panel-title">Video source</h2>
           </div>
+        </div>
+        <div class="panel-body panel-body--source">
+          <div class="source-bar-grid">
+            <div class="source-bar-main">
+              <div class="seg-tabs tabs" role="tablist">
+                <button type="button" class="seg-tab tab active" data-pane="pane-youtube" role="tab">YouTube</button>
+                <button type="button" class="seg-tab tab" data-pane="pane-upload" role="tab">File</button>
+              </div>
 
-          <div id="pane-youtube" class="source-pane active" role="tabpanel">
-            <div class="field">
-              <label for="youtube-url">YouTube URL</label>
-              <input type="url" id="youtube-url" placeholder="https://www.youtube.com/watch?v=…">
+              <div id="pane-youtube" class="source-pane active" role="tabpanel">
+                <div class="field">
+                  <label for="youtube-url">YouTube URL</label>
+                  <input type="url" id="youtube-url" placeholder="https://www.youtube.com/watch?v=…">
+                </div>
+              </div>
+
+              <div id="pane-upload" class="source-pane" role="tabpanel">
+                <label class="dropzone" id="dropzone">
+                  <input type="file" id="file-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
+                  <span class="dropzone-icon" aria-hidden="true">▶</span>
+                  <strong>Drop a video</strong>
+                  <span>MP4, WebM, MOV</span>
+                </label>
+                <p class="file-name" id="file-name"></p>
+              </div>
+
+              <p class="video-info" id="video-info" hidden></p>
+            </div>
+
+            <div class="source-bar-side">
+              <details class="settings-details">
+                <summary>Report settings</summary>
+                <div class="settings-details-body">
+                  <p class="estimate-box" id="estimate-box">
+                    Full video processed · API calls paced at 100 req/min and 100K tok/min
+                  </p>
+                  <div class="field">
+                    <label for="language">Transcript language</label>
+                    <select id="language">
+                      <option value="auto" selected>Auto</option>
+                      <option value="en">English</option>
+                      <option value="fr">French</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="prompt-default">Default report prompt</label>
+                    <textarea id="prompt-default" class="prompt-field prompt-field--readonly" rows="4" readonly aria-readonly="true"></textarea>
+                  </div>
+                  <div class="field field--last">
+                    <label for="prompt-custom">Custom instructions <span class="label-optional">(optional)</span></label>
+                    <textarea id="prompt-custom" class="prompt-field" rows="2" maxlength="4000" placeholder="e.g. Focus on pricing decisions…"></textarea>
+                  </div>
+                </div>
+              </details>
+
+              <div class="source-bar-actions">
+                <button type="button" class="btn btn-primary" id="convert-btn">Generate document</button>
+                <div class="progress-wrap" id="progress-wrap">
+                  <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                  </div>
+                  <div class="progress-meta">
+                    <span id="status-msg">Waiting…</span>
+                    <span class="progress-right">
+                      <span id="progress-eta"></span>
+                      <span id="progress-pct">0%</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="stage-workspace">
+        <section class="panel panel--chat" aria-labelledby="panel-chat-title">
+          <div class="panel-head">
+            <div class="panel-head-label">
+              <span class="section-eyebrow">Chat</span>
+              <h2 id="panel-chat-title" class="panel-title">Ask your video</h2>
+            </div>
+          </div>
+          <div class="panel-body panel-body--chat">
+            <div class="chat-empty" id="chat-empty">
+              <span class="chat-empty-icon" aria-hidden="true">◈</span>
+              <p>Generate a report first to start chatting.</p>
+            </div>
+            <div class="chat-pane" id="chat-pane" hidden>
+              <p class="chat-context-warn" id="chat-context-warn" hidden>
+                Limited context — transcript and frame analyses are unavailable for this report.
+              </p>
+              <div class="chat-suggestions" id="chat-suggestions">
+                <button type="button" class="chat-chip" data-prompt="Add a FAQ section from the transcript">FAQ from transcript</button>
+                <button type="button" class="chat-chip" data-prompt="Summarize key decisions made after minute 5">Decisions after 5 min</button>
+                <button type="button" class="chat-chip" data-prompt="What was shown on screen around 2:30?">Screen at 2:30</button>
+              </div>
+              <ul class="chat-messages" id="chat-messages" aria-live="polite"></ul>
+              <form class="chat-compose" id="chat-form">
+                <label class="sr-only" for="chat-input">Message</label>
+                <textarea id="chat-input" rows="2" maxlength="4000" placeholder="Ask about the video or request a new report section…" disabled></textarea>
+                <button type="submit" class="btn btn-primary" id="chat-send" disabled>Send</button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel--report" aria-labelledby="panel-report-title">
+          <div class="panel-head">
+            <div class="panel-head-label">
+              <span class="section-eyebrow section-eyebrow--muted">Output</span>
+              <h2 id="panel-report-title" class="panel-title">Your report</h2>
+            </div>
+            <div class="panel-head-actions output-toolbar">
+              <div class="seg-tabs view-tabs" role="tablist" aria-label="Report view">
+                <button type="button" class="seg-tab btn btn-secondary active" id="btn-preview" role="tab">Preview</button>
+                <button type="button" class="seg-tab btn btn-secondary" id="btn-raw" role="tab">Markdown</button>
+              </div>
+              <div class="export-menu" id="export-menu">
+                <button type="button" class="btn btn-secondary export-trigger" id="btn-export-menu" aria-haspopup="true" aria-expanded="false" disabled>Export</button>
+                <div class="export-dropdown" id="export-dropdown" hidden>
+                  <button type="button" class="export-option" id="btn-download-md" disabled>Download .md</button>
+                  <button type="button" class="export-option" id="btn-download-html" disabled>Download .html</button>
+                  <button type="button" class="export-option" id="btn-download-pdf" disabled>Download .pdf</button>
+                  <button type="button" class="export-option" id="btn-export-metrics" disabled>Export metrics JSON</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel-body panel-body--report">
+            <div class="report-canvas">
+              <div class="output-empty" id="output-empty">
+                <div class="output-empty-icon" aria-hidden="true">◇</div>
+                <p>No report yet.</p>
+                <p class="output-empty-hint">Add a video and select <strong>Generate document</strong>.</p>
+              </div>
+              <div class="doc-preview" id="doc-preview"></div>
+              <pre class="doc-raw" id="doc-raw"></pre>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Secondary: collapsed by default -->
+    <aside class="auxiliary" aria-label="Secondary panels">
+      <details class="aux-details perf-panel" id="perf-panel">
+        <summary class="aux-summary">
+          <span class="aux-summary-label">Pipeline metrics</span>
+          <span class="aux-summary-hint" id="perf-summary-hint">Gantt timeline and per-call breakdown</span>
+          <span class="aux-summary-stats" id="perf-summary-inline" aria-hidden="true">
+            <span class="inline-stat"><strong id="ps-total">—</strong> total</span>
+            <span class="inline-stat inline-stat--accent"><strong id="ps-cerebras">—</strong> Cerebras</span>
+            <span class="inline-stat inline-stat--accent"><strong id="m-tps">—</strong> tok/s</span>
+          </span>
+        </summary>
+        <div class="aux-body">
+          <div class="perf-summary" id="perf-summary">
+            <div class="perf-stat perf-stat--highlight">
+              <span>Total (wall clock)</span>
+              <strong id="ps-total-full">—</strong>
+            </div>
+            <div class="perf-stat perf-stat--highlight perf-stat--cerebras">
+              <span>Cerebras inference</span>
+              <strong id="ps-cerebras-full">—</strong>
+            </div>
+            <div class="perf-stat perf-stat--cerebras">
+              <span>Avg. tokens/s</span>
+              <strong id="m-tps-full">—</strong>
+            </div>
+            <div class="perf-stat">
+              <span>API calls</span>
+              <strong id="ps-calls">—</strong>
             </div>
           </div>
 
-          <div id="pane-upload" class="source-pane" role="tabpanel">
-            <label class="dropzone" id="dropzone">
-              <input type="file" id="file-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
-              <span class="dropzone-icon" aria-hidden="true">▶</span>
-              <strong>Drop a video</strong>
-              <span>MP4, WebM, MOV</span>
-            </label>
-            <p class="file-name" id="file-name"></p>
-          </div>
-
-          <p class="video-info" id="video-info" hidden></p>
-
-          <div class="options-block">
-            <p class="options-title">Settings</p>
-            <p class="estimate-box" id="estimate-box">
-              Full video processed · API calls paced at 100 req/min and 100K tok/min
+          <details class="perf-details-more">
+            <summary>All timing metrics</summary>
+            <div class="perf-summary perf-summary--extended">
+              <div class="perf-stat">
+                <span>Ingest &amp; download</span>
+                <strong id="ps-ingest">—</strong>
+              </div>
+              <div class="perf-stat">
+                <span>Local prep</span>
+                <strong id="ps-local">—</strong>
+              </div>
+              <div class="perf-stat perf-stat--cerebras">
+                <span>Cerebras queue</span>
+                <strong id="ps-queue">—</strong>
+              </div>
+              <div class="perf-stat perf-stat--cerebras">
+                <span>Rate-limit pause</span>
+                <strong id="ps-pause">—</strong>
+              </div>
+              <div class="perf-stat perf-stat--cerebras">
+                <span>Avg. TTFT</span>
+                <strong id="ps-ttft">—</strong>
+              </div>
+              <div class="perf-stat">
+                <span>Tokens generated</span>
+                <strong id="ps-tokens">—</strong>
+              </div>
+            </div>
+            <p class="perf-hint">
+              <strong>Total</strong> = wall clock from launch (includes queues).
+              <strong>Cerebras queue</strong> = server wait before inference.
+              <strong>Rate-limit pause</strong> = hackathon RPM/TPM pacing.
             </p>
-            <div class="field">
-              <label for="language">Transcript language</label>
-              <select id="language">
-                <option value="auto" selected>Auto</option>
-                <option value="en">English</option>
-                <option value="fr">French</option>
-              </select>
-            </div>
-          </div>
+          </details>
 
-          <button type="button" class="btn btn-primary" id="convert-btn">Generate document</button>
+          <div class="gantt" id="gantt-chart" aria-label="Pipeline timeline"></div>
 
-          <div class="progress-wrap" id="progress-wrap">
-            <div class="progress-bar">
-              <div class="progress-fill" id="progress-fill"></div>
+          <details class="api-details" id="api-details">
+            <summary>Per-call API breakdown</summary>
+            <div class="api-table-wrap">
+              <table class="api-table" id="api-table">
+                <thead>
+                  <tr>
+                    <th>Step</th>
+                    <th>Wall</th>
+                    <th>Queue</th>
+                    <th>TTFT</th>
+                    <th>Tok/s</th>
+                    <th>Prompt</th>
+                    <th>Output</th>
+                  </tr>
+                </thead>
+                <tbody id="api-table-body"></tbody>
+              </table>
             </div>
-            <div class="progress-meta">
-              <span id="status-msg">Waiting…</span>
-              <span id="progress-pct">0%</span>
-            </div>
-          </div>
-
-          <div class="metrics" id="metrics">
-            <div class="metric">
-              <span>Total time</span>
-              <strong id="m-elapsed">—</strong>
-            </div>
-            <div class="metric">
-              <span>Cerebras LLM</span>
-              <strong id="m-llm">—</strong>
-            </div>
-            <div class="metric">
-              <span>Tokens/s</span>
-              <strong id="m-tps">—</strong>
-            </div>
-          </div>
+          </details>
         </div>
-      </section>
+      </details>
 
-      <section class="panel" aria-labelledby="panel-doc-title">
-        <div class="panel-head">
-          <span id="panel-doc-title" class="panel-label">02 — Document</span>
+      <details class="aux-details panel--history" id="history-block">
+        <summary class="aux-summary">
+          <span class="aux-summary-label">Past reports</span>
+          <span class="aux-summary-hint">Reopen or delete previous conversions</span>
+          <span class="aux-badge" id="history-count" hidden></span>
+        </summary>
+        <div class="aux-body aux-body--history">
+          <div class="history-toolbar">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-history">Refresh</button>
+          </div>
+          <ul class="history-list" id="history-list" aria-label="Report history"></ul>
         </div>
-        <div class="panel-body">
-          <div class="output-toolbar">
-            <button type="button" class="btn btn-secondary active" id="btn-preview">Preview</button>
-            <button type="button" class="btn btn-secondary" id="btn-raw">Markdown</button>
-            <button type="button" class="btn btn-secondary" id="btn-download-md" disabled>Download .md</button>
-            <button type="button" class="btn btn-secondary" id="btn-download-html" disabled>Download .html</button>
-            <button type="button" class="btn btn-secondary" id="btn-download-pdf" disabled>Download .pdf</button>
-          </div>
+      </details>
+    </aside>
 
-          <div class="history-block" id="history-block">
-            <div class="history-head">
-              <span class="history-title">Report history</span>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-history">Refresh</button>
-            </div>
-            <ul class="history-list" id="history-list" aria-label="Report history"></ul>
-          </div>
-
-          <div class="output-empty" id="output-empty">
-            <div class="output-empty-icon" aria-hidden="true">◇</div>
-            <p>Your document will appear here after conversion.</p>
-            <p class="output-empty-hint">Key frames and transcript are merged by Gemma 4.</p>
-          </div>
-          <div class="doc-preview" id="doc-preview"></div>
-          <pre class="doc-raw" id="doc-raw"></pre>
-        </div>
-      </section>
-    </div>
-
-    <section class="panel perf-panel" id="perf-panel">
-      <div class="panel-head perf-head">
-        <span class="panel-label">03 — Performance</span>
-        <button type="button" class="btn btn-secondary" id="btn-export-metrics" disabled>Export JSON</button>
-      </div>
-      <div class="panel-body">
-        <div class="perf-summary" id="perf-summary">
-          <div class="perf-stat">
-            <span>Ingest &amp; download</span>
-            <strong id="ps-ingest">—</strong>
-          </div>
-          <div class="perf-stat">
-            <span>Local prep</span>
-            <strong id="ps-local">—</strong>
-          </div>
-          <div class="perf-stat perf-stat--highlight">
-            <span>Cerebras inference</span>
-            <strong id="ps-cerebras">—</strong>
-          </div>
-          <div class="perf-stat">
-            <span>Avg. TTFT</span>
-            <strong id="ps-ttft">—</strong>
-          </div>
-          <div class="perf-stat">
-            <span>Tokens generated</span>
-            <strong id="ps-tokens">—</strong>
-          </div>
-          <div class="perf-stat">
-            <span>API calls</span>
-            <strong id="ps-calls">—</strong>
-          </div>
-        </div>
-
-        <p class="perf-hint">
-          Live metrics — saved to <code>metrics.json</code> per job. Export JSON to compare Cerebras vs GPU.
-        </p>
-
-        <ol class="step-timeline" id="step-timeline"></ol>
-
-        <details class="api-details" id="api-details">
-          <summary>Per-call API breakdown</summary>
-          <div class="api-table-wrap">
-            <table class="api-table" id="api-table">
-              <thead>
-                <tr>
-                  <th>Step</th>
-                  <th>Wall</th>
-                  <th>TTFT</th>
-                  <th>Tok/s</th>
-                  <th>Prompt</th>
-                  <th>Output</th>
-                </tr>
-              </thead>
-              <tbody id="api-table-body"></tbody>
-            </table>
-          </div>
-        </details>
-      </div>
-    </section>
+    <!-- Hidden mirrors for live-clock JS (synced in renderPerformance) -->
+    <span id="m-elapsed" hidden aria-hidden="true"></span>
+    <span id="m-llm" hidden aria-hidden="true"></span>
 
     <footer class="site-footer">
       <span>Built for the Gemma 4 Hackathon</span>
       <a href="https://www.cerebras.ai/" target="_blank" rel="noopener noreferrer">Cerebras</a>
       <span aria-hidden="true">·</span>
       <a href="https://huggingface.co/google/gemma-4-31B-it" target="_blank" rel="noopener noreferrer">Gemma 4 31B</a>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span class="site-footer-license" title="Temporary proprietary license — no redistribution until July 15, 2026">
+        © 2026 knoel99 · All rights reserved · No fork / redistribution
+      </span>
     </footer>
   </div>
   <script src="/static/app.js"></script>

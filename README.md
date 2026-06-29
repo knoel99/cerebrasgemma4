@@ -2,6 +2,10 @@
 
 Projet hackathon — Gemma 4 31B sur [Cerebras Inference](https://inference-docs.cerebras.ai/models/gemma-4-31b).
 
+## License
+
+**Temporary proprietary license** (June 28 – July 15, 2026). All rights reserved — no copying, forking, redistribution, or commercial use without permission. See [LICENSE](LICENSE). Previous Apache 2.0 terms are preserved in [LICENSE.apache-2.0](LICENSE.apache-2.0) for post-hackathon relicensing.
+
 ## Setup
 
 ```bash
